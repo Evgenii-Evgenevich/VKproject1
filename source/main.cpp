@@ -3,6 +3,7 @@
 #include <vulkan/vulkan.h>
 #include <windows.h>
 #include <vector>
+#include <thread>
 
 #ifdef _MSC_VER
 #pragma comment ( lib, "vulkan-1" )
@@ -10,6 +11,9 @@
 
 // global variables 
 char sAppName[] = "VKproject1";
+
+static void mainWndProc(void);
+static void renderProc(void);
 
 // WNDPROC
 static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
@@ -20,23 +24,23 @@ int main(const int argc, const char* const argv[])
 
 	VkInstance hVkInstance = nullptr;
 
-	VkSurfaceKHR hVkSurfaceKHR = nullptr;
+	VkSurfaceKHR hVkSurfaceKHR = 0;
 
 	VkDevice hVkDevice = nullptr;
 
 	VkQueue hVkQueue = nullptr;
 
-	VkSwapchainKHR hVkSwapchainKHR = nullptr;
+	VkSwapchainKHR hVkSwapchainKHR = 0;
 
 	std::vector<VkImage> vectorVkImages(0);
 
-	VkCommandPool hVkCommandPool = nullptr;
+	VkCommandPool hVkCommandPool = 0;
 
 	std::vector<VkCommandBuffer> vectorVkCommandBuffers(0);
 
-	VkSemaphore hVkSemaphoreImageAvalable = nullptr;
+	VkSemaphore hVkSemaphoreImageAvalable = 0;
 
-	VkSemaphore hVkSemaphoreRenderFinished = nullptr;
+	VkSemaphore hVkSemaphoreRenderFinished = 0;
 
 	// Create Vk Instance 
 	{
@@ -75,14 +79,14 @@ int main(const int argc, const char* const argv[])
 				const char icon_path[] = "../resources/Vulkan.ico";
 				wcex.hIcon = static_cast<HICON>(LoadImageA(nullptr, icon_path, IMAGE_ICON, 256, 256, LR_LOADFROMFILE));
 				wcex.hIconSm = static_cast<HICON>(LoadImageA(nullptr, icon_path, IMAGE_ICON, 32, 32, LR_LOADFROMFILE));
-				wcex.hCursor = LoadCursorA(nullptr, MAKEINTRESOURCEA(32512));
+				wcex.hCursor = LoadCursorA(nullptr, reinterpret_cast<LPCSTR>(32512));
 				wcex.hbrBackground = GetSysColorBrush(COLOR_WINDOWFRAME);
 				wcex.lpszClassName = sAppName;
 
 				RegisterClassExA(&wcex);
 			}
 
-			DWORD windowStyle = WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME;
+			DWORD windowStyle = WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
 			DWORD windowExtendedStyle = WS_EX_APPWINDOW;
 
 			RECT windowRect = { 0, 0, 640, 480 };
@@ -200,7 +204,7 @@ int main(const int argc, const char* const argv[])
 			// Create Vk Swapchain 
 			{
 				VkSurfaceFormatKHR surfaceFormatKHR = {};
-				// Get Vk Surface Format
+				// Get Vk Surface Format 
 				{
 					unsigned upSurfaceFormatCount = 0;
 					vkGetPhysicalDeviceSurfaceFormatsKHR(hVkPhysicalDevice, hVkSurfaceKHR, &upSurfaceFormatCount, nullptr);
@@ -231,17 +235,17 @@ int main(const int argc, const char* const argv[])
 				}
 
 				VkPresentModeKHR presentModeKHR = VK_PRESENT_MODE_FIFO_KHR;
-				// Get Vk Present Mode
+				// Get Vk Present Mode 
 				{
-					unsigned uPresentModes = 0;
+					unsigned uPresentModeCount = 0;
 
-					vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModes, nullptr);
+					vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, nullptr);
 
-					if (uPresentModes)
+					if (uPresentModeCount)
 					{
-						std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModes);
+						std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModeCount);
 
-						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModes, vectorPresentModes.data());
+						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, vectorPresentModes.data());
 
 						for (const VkPresentModeKHR& vkPresentModeKHR : vectorPresentModes)
 						{
@@ -255,8 +259,10 @@ int main(const int argc, const char* const argv[])
 				}
 
 				VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
-				// Get Vk Surface Capabilities
-				vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+				// Get Vk Surface Capabilities 
+				{
+					vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+				}
 
 				VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
 				swapchainCreateInfoKHR.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -297,7 +303,7 @@ int main(const int argc, const char* const argv[])
 			vkCreateCommandPool(hVkDevice, &commandPoolCreateInfo, nullptr, &hVkCommandPool);
 		}
 
-		// Allocate Vk Command Buffers
+		// Allocate Vk Command Buffers 
 		{
 			VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
 			commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -317,6 +323,8 @@ int main(const int argc, const char* const argv[])
 			commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
 			VkClearColorValue clearColorValue = { 0.5f, 0.1f, 0.4f };
+
+			VkViewport viewport = { 0.f, 0.f, 640.f, 480.f, 0.f, 1.f };
 
 			VkImageSubresourceRange imageSubresourceRange = {};
 			imageSubresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -386,7 +394,7 @@ int main(const int argc, const char* const argv[])
 	while (msg.message != WM_QUIT)
 	{
 		// Win Peek Messages 
-		if (PeekMessageA(&msg, hWnd, 0, 0, PM_REMOVE))
+		if (PeekMessageA(&msg, nullptr, 0, 0, PM_REMOVE))
 		{
 			TranslateMessage(&msg);
 			DispatchMessageA(&msg);
@@ -395,7 +403,7 @@ int main(const int argc, const char* const argv[])
 		// Vk Draw 
 		{
 			unsigned uImageIndex;
-			vkAcquireNextImageKHR(hVkDevice, hVkSwapchainKHR, static_cast<uint64_t>(-1), hVkSemaphoreImageAvalable, nullptr, &uImageIndex);
+			vkAcquireNextImageKHR(hVkDevice, hVkSwapchainKHR, static_cast<uint64_t>(-1), hVkSemaphoreImageAvalable, 0, &uImageIndex);
 
 			VkSubmitInfo submitInfo = {};
 			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -408,7 +416,7 @@ int main(const int argc, const char* const argv[])
 			submitInfo.signalSemaphoreCount = 1;
 			submitInfo.pSignalSemaphores = &hVkSemaphoreRenderFinished;
 
-			vkQueueSubmit(hVkQueue, 1, &submitInfo, nullptr);
+			vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
 
 			VkPresentInfoKHR presentInfoKHR = {};
 			presentInfoKHR.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -424,18 +432,53 @@ int main(const int argc, const char* const argv[])
 		Sleep(15);
 	}
 
+	vkDestroySemaphore(hVkDevice, hVkSemaphoreImageAvalable, nullptr);
+	hVkSemaphoreImageAvalable = 0;
+
+	vkDestroySemaphore(hVkDevice, hVkSemaphoreRenderFinished, nullptr);
+	hVkSemaphoreRenderFinished = 0;
+
+	vkFreeCommandBuffers(hVkDevice, hVkCommandPool, vectorVkCommandBuffers.size(), vectorVkCommandBuffers.data());
+	vectorVkCommandBuffers.clear();
+
+	vkDestroyCommandPool(hVkDevice, hVkCommandPool, nullptr);
+	hVkCommandPool = 0;
+
+	for (const VkImage& hVkImage : vectorVkImages)
+	{
+		vkDestroyImage(hVkDevice, hVkImage, nullptr);
+	}
+	vectorVkImages.clear();
+
+	// vkDestroySwapchainKHR(hVkDevice, hVkSwapchainKHR, nullptr);
+	// hVkSwapchainKHR = 0;
+
+	vkDestroyDevice(hVkDevice, nullptr);
+	hVkDevice = nullptr;
+
+	vkDestroySurfaceKHR(hVkInstance, hVkSurfaceKHR, nullptr);
+	hVkSurfaceKHR = 0;
+
+	vkDestroyInstance(hVkInstance, nullptr);
+	hVkInstance = nullptr;
+
 	return 0;
 }
 
-LRESULT WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
+void mainWndProc(void)
+{
+}
+
+void renderProc(void)
+{
+}
+
+static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (Msg)
 	{
 	case WM_DESTROY:
 		PostQuitMessage(0);
-		return 0;
-
-	case WM_PAINT:
 		return 0;
 
 	case WM_CLOSE:
