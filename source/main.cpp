@@ -1,6 +1,7 @@
 #define VK_USE_PLATFORM_WIN32_KHR 1
 
 #include <vulkan/vulkan.h>
+#include <stdio.h>
 #include <windows.h>
 #include <vector>
 #include <thread>
@@ -15,8 +16,10 @@ char sAppName[] = "VKproject1";
 static void mainWndProc(void);
 static void renderProc(void);
 
-// WNDPROC
+// WNDPROC 
 static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
+
+static std::vector<char> getFromFile(const char* filename);
 
 int main(const int argc, const char* const argv[])
 {
@@ -33,6 +36,8 @@ int main(const int argc, const char* const argv[])
 	VkSwapchainKHR hVkSwapchainKHR = 0;
 
 	std::vector<VkImage> vectorVkImages(0);
+
+	VkPipeline hVkPipeline = 0;
 
 	VkCommandPool hVkCommandPool = 0;
 
@@ -115,7 +120,6 @@ int main(const int argc, const char* const argv[])
 			win32SurfaceCreateInfoKHR.hwnd = hWnd;
 			win32SurfaceCreateInfoKHR.hinstance = hInstance;
 			
-			PFN_vkCreateWin32SurfaceKHR vkCreateWin32SurfaceKHR = reinterpret_cast<PFN_vkCreateWin32SurfaceKHR>(vkGetInstanceProcAddr(hVkInstance, "vkCreateWin32SurfaceKHR"));
 			vkCreateWin32SurfaceKHR(hVkInstance, &win32SurfaceCreateInfoKHR, nullptr, &hVkSurfaceKHR);
 		}
 	}
@@ -150,15 +154,15 @@ int main(const int argc, const char* const argv[])
 							VkQueueFamilyProperties* pAllVkQueueFamilyProperties = new VkQueueFamilyProperties[uQueueFamilyPropertyCount];
 							vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, pAllVkQueueFamilyProperties);
 
-							for (int i = 0; i < uQueueFamilyPropertyCount; ++i)
+							for (unsigned index = 0; index < uQueueFamilyPropertyCount; ++index)
 							{
 								VkBool32 bIsSupported = FALSE;
-								vkGetPhysicalDeviceSurfaceSupportKHR(hCurrentPhysicalDevice, i, hVkSurfaceKHR, &bIsSupported);
+								vkGetPhysicalDeviceSurfaceSupportKHR(hCurrentPhysicalDevice, index, hVkSurfaceKHR, &bIsSupported);
 
-								if (bIsSupported && pAllVkQueueFamilyProperties[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+								if (bIsSupported && pAllVkQueueFamilyProperties[index].queueFlags & VK_QUEUE_GRAPHICS_BIT && pAllVkQueueFamilyProperties[index].queueCount)
 								{
 									hVkPhysicalDevice = hCurrentPhysicalDevice;
-									iQueueFamilyIndex = i;
+									iQueueFamilyIndex = index;
 									break;
 								}
 							}
@@ -294,6 +298,11 @@ int main(const int argc, const char* const argv[])
 			vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
 		}
 
+		// Create Vk Pipeline 
+		{
+			hVkPipeline;
+		}
+
 		// Create Vk Command Pool 
 		{
 			VkCommandPoolCreateInfo commandPoolCreateInfo = {};
@@ -309,7 +318,7 @@ int main(const int argc, const char* const argv[])
 			commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 			commandBufferAllocateInfo.commandPool = hVkCommandPool;
 			commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-			commandBufferAllocateInfo.commandBufferCount = vectorVkImages.size();
+			commandBufferAllocateInfo.commandBufferCount = static_cast<uint32_t>(vectorVkImages.size());
 
 			vectorVkCommandBuffers.resize(commandBufferAllocateInfo.commandBufferCount);
 
@@ -322,9 +331,7 @@ int main(const int argc, const char* const argv[])
 			commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
-			VkClearColorValue clearColorValue = { 0.5f, 0.1f, 0.4f };
-
-			VkViewport viewport = { 0.f, 0.f, 640.f, 480.f, 0.f, 1.f };
+			VkClearColorValue clearColorValue = { 0.5f, 0.1f, 0.4f, 1.f };
 
 			VkImageSubresourceRange imageSubresourceRange = {};
 			imageSubresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -354,6 +361,7 @@ int main(const int argc, const char* const argv[])
 				}
 
 				vkCmdClearColorImage(vectorVkCommandBuffers[i], vectorVkImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColorValue, 1, &imageSubresourceRange);
+				vkCmdBindPipeline(vectorVkCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hVkPipeline);
 
 				// Vk Image Memory Barrier Clear To Present 
 				{
@@ -438,7 +446,7 @@ int main(const int argc, const char* const argv[])
 	vkDestroySemaphore(hVkDevice, hVkSemaphoreRenderFinished, nullptr);
 	hVkSemaphoreRenderFinished = 0;
 
-	vkFreeCommandBuffers(hVkDevice, hVkCommandPool, vectorVkCommandBuffers.size(), vectorVkCommandBuffers.data());
+	vkFreeCommandBuffers(hVkDevice, hVkCommandPool, static_cast<uint32_t>(vectorVkCommandBuffers.size()), vectorVkCommandBuffers.data());
 	vectorVkCommandBuffers.clear();
 
 	vkDestroyCommandPool(hVkDevice, hVkCommandPool, nullptr);
@@ -452,6 +460,9 @@ int main(const int argc, const char* const argv[])
 
 	// vkDestroySwapchainKHR(hVkDevice, hVkSwapchainKHR, nullptr);
 	// hVkSwapchainKHR = 0;
+
+	vkDestroyPipeline(hVkDevice, hVkPipeline, nullptr);
+	hVkPipeline = 0;
 
 	vkDestroyDevice(hVkDevice, nullptr);
 	hVkDevice = nullptr;
@@ -489,3 +500,32 @@ static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lPar
 
 	return DefWindowProcA(hWnd, Msg, wParam, lParam);
 }
+
+std::vector<char> getFromFile(const char* filename)
+{
+	std::vector<char> result(0ULL);
+
+	FILE* filePtr = fopen(filename, "rb");
+
+	if (!filePtr)
+	{
+		char path[2048];
+		sprintf(path, "./%s", filename);
+		filePtr = fopen(path, "rb");
+	}
+
+	if (filePtr)
+	{
+		fseek(filePtr, 0L, SEEK_END);
+		const long lSize = ftell(filePtr);
+
+		result.resize(lSize);
+		
+		fread(result.data(), 1, lSize, filePtr);
+
+		fclose(filePtr);
+	}
+
+	return result;
+}
+
