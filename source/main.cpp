@@ -471,6 +471,7 @@ currentExtent = surfaceCapabilitiesKHR.currentExtent;
 
 			VkVertexInputBindingDescription vertexInputBindingDescription = {};
 			vertexInputBindingDescription.binding = 0;
+			vertexInputBindingDescription.stride = sizeof VertexPositionColor;
 			vertexInputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
 			VkVertexInputAttributeDescription vertexInputAttributsDescriptions[] = { {}, {} };
