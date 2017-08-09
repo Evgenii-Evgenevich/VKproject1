@@ -10,6 +10,17 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "resources", "resources", "{
 		resources\Vulkan.ico = resources\Vulkan.ico
 	EndProjectSection
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "glsl", "glsl", "{47F6A146-ECF1-415C-903E-1A206F0D0B73}"
+	ProjectSection(SolutionItems) = preProject
+		resources\shaders\glsl\color.frag = resources\shaders\glsl\color.frag
+		resources\shaders\glsl\color.vert = resources\shaders\glsl\color.vert
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "scripts", "scripts", "{E4D5589D-2E83-4C29-A7FC-504C17577018}"
+	ProjectSection(SolutionItems) = preProject
+		VKproject1\generatecolorshaders.bat = VKproject1\generatecolorshaders.bat
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -29,5 +40,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{47F6A146-ECF1-415C-903E-1A206F0D0B73} = {D9827170-3C13-4631-B0AB-889BCE585552}
 	EndGlobalSection
 EndGlobal

@@ -11,11 +11,6 @@ layout (binding = 0) uniform MVP
 } uniforms;
 
 layout (location = 0) out vec3 fragColor;
- 
-out gl_PerVertex
-{
-    vec4 gl_Position;
-};
 
 void main(void)
 {

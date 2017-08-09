@@ -16,10 +16,13 @@ char sAppName[] = "VKproject1";
 static void mainWndProc(void);
 static void renderProc(void);
 
+std::vector<unsigned char> getBytesFromFile(const char* filename);
+std::vector<char> getCharsFromFile(const char* filename);
+
+
 // WNDPROC 
 static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam);
 
-static std::vector<char> getFromFile(const char* filename);
 
 int main(const int argc, const char* const argv[])
 {
@@ -35,13 +38,28 @@ int main(const int argc, const char* const argv[])
 
 	VkSwapchainKHR hVkSwapchainKHR = 0;
 
-	std::vector<VkImage> vectorVkImages(0);
+	std::vector<VkImageView> vectorVkImagesViews(0ULL);
+
+	std::vector<VkFramebuffer> vectorVkFramebuffers(0ULL);
+
+	VkRenderPass hVkRenderPass = 0;
+
+	VkPipelineLayout hVkPipelineLayout = 0;
 
 	VkPipeline hVkPipeline = 0;
 
+	VkDeviceMemory hVertexPositionVkDeviceMemory = 0;
+	VkBuffer hVertexPositionVkBuffer = 0;
+
+	VkDeviceMemory hVertexColorVkDeviceMemory = 0;
+	VkBuffer hVertexColorVkBuffer = 0;
+
+	VkDeviceMemory hIndexVkDeviceMemory = 0;
+	VkBuffer hIndexVkBuffer = 0;
+
 	VkCommandPool hVkCommandPool = 0;
 
-	std::vector<VkCommandBuffer> vectorVkCommandBuffers(0);
+	std::vector<VkCommandBuffer> vectorVkCommandBuffers(0ULL);
 
 	VkSemaphore hVkSemaphoreImageAvalable = 0;
 
@@ -96,7 +114,7 @@ int main(const int argc, const char* const argv[])
 
 			RECT windowRect = { 0, 0, 640, 480 };
 
-			AdjustWindowRectEx(&windowRect, windowStyle, 0, windowExtendedStyle);
+			AdjustWindowRectEx(&windowRect, windowStyle | WS_CAPTION, 0, windowExtendedStyle);
 
 			hWnd = CreateWindowExA(
 				windowExtendedStyle, // window extended style 
@@ -125,7 +143,11 @@ int main(const int argc, const char* const argv[])
 	}
 
 	{
+		std::vector<VkImage> vectorVkImages(0ULL);
+
 		int iQueueFamilyIndex = -1;
+
+		VkExtent2D currentExtent = {};
 
 		{
 			VkPhysicalDevice hVkPhysicalDevice = nullptr;
@@ -149,6 +171,7 @@ int main(const int argc, const char* const argv[])
 						unsigned uQueueFamilyPropertyCount = 0;
 						vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, nullptr);
 
+						// Get Queue Family Index 
 						if (uQueueFamilyPropertyCount)
 						{
 							VkQueueFamilyProperties* pAllVkQueueFamilyProperties = new VkQueueFamilyProperties[uQueueFamilyPropertyCount];
@@ -205,7 +228,6 @@ int main(const int argc, const char* const argv[])
 				vkGetDeviceQueue(hVkDevice, iQueueFamilyIndex, 0, &hVkQueue);
 			}
 
-			// Create Vk Swapchain 
 			{
 				VkSurfaceFormatKHR surfaceFormatKHR = {};
 				// Get Vk Surface Format 
@@ -238,69 +260,322 @@ int main(const int argc, const char* const argv[])
 					}
 				}
 
-				VkPresentModeKHR presentModeKHR = VK_PRESENT_MODE_FIFO_KHR;
-				// Get Vk Present Mode 
+				// Create Vk Swapchain 
 				{
-					unsigned uPresentModeCount = 0;
-
-					vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, nullptr);
-
-					if (uPresentModeCount)
+					VkPresentModeKHR presentModeKHR = VK_PRESENT_MODE_FIFO_KHR;
+					// Get Vk Present Mode 
 					{
-						std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModeCount);
+						unsigned uPresentModeCount = 0;
 
-						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, vectorPresentModes.data());
+						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, nullptr);
 
-						for (const VkPresentModeKHR& vkPresentModeKHR : vectorPresentModes)
+						if (uPresentModeCount)
 						{
-							if (vkPresentModeKHR == VK_PRESENT_MODE_MAILBOX_KHR)
+							std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModeCount);
+
+							vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, vectorPresentModes.data());
+
+							for (const VkPresentModeKHR& vkPresentModeKHR : vectorPresentModes)
 							{
-								presentModeKHR = vkPresentModeKHR;
-								break;
+								if (vkPresentModeKHR == VK_PRESENT_MODE_MAILBOX_KHR)
+								{
+									presentModeKHR = vkPresentModeKHR;
+									break;
+								}
 							}
 						}
 					}
+
+					VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
+					// Get Vk Surface Capabilities 
+					{
+						vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+						currentExtent = surfaceCapabilitiesKHR.currentExtent;
+					}
+
+					VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
+					swapchainCreateInfoKHR.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+					swapchainCreateInfoKHR.surface = hVkSurfaceKHR;
+					swapchainCreateInfoKHR.minImageCount = surfaceCapabilitiesKHR.maxImageCount < 3 ? surfaceCapabilitiesKHR.maxImageCount : 3;
+					swapchainCreateInfoKHR.imageFormat = surfaceFormatKHR.format;
+					swapchainCreateInfoKHR.imageColorSpace = surfaceFormatKHR.colorSpace;
+					swapchainCreateInfoKHR.imageExtent = currentExtent;
+					swapchainCreateInfoKHR.imageArrayLayers = 1;
+					swapchainCreateInfoKHR.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+					swapchainCreateInfoKHR.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+					swapchainCreateInfoKHR.preTransform = surfaceCapabilitiesKHR.currentTransform;
+					swapchainCreateInfoKHR.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+					swapchainCreateInfoKHR.presentMode = presentModeKHR;
+					swapchainCreateInfoKHR.clipped = TRUE;
+
+					vkCreateSwapchainKHR(hVkDevice, &swapchainCreateInfoKHR, nullptr, &hVkSwapchainKHR);
 				}
 
-				VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
-				// Get Vk Surface Capabilities 
+				// Get Vk Swapchain Images 
 				{
-					vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+					unsigned uSwapchainImageCount = 0;
+
+					vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
+
+					vectorVkImages.resize(uSwapchainImageCount);
+
+					vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
 				}
 
-				VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
-				swapchainCreateInfoKHR.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-				swapchainCreateInfoKHR.surface = hVkSurfaceKHR;
-				swapchainCreateInfoKHR.minImageCount = surfaceCapabilitiesKHR.maxImageCount < 3 ? surfaceCapabilitiesKHR.maxImageCount : 3;
-				swapchainCreateInfoKHR.imageFormat = surfaceFormatKHR.format;
-				swapchainCreateInfoKHR.imageColorSpace = surfaceFormatKHR.colorSpace;
-				swapchainCreateInfoKHR.imageExtent = surfaceCapabilitiesKHR.currentExtent;
-				swapchainCreateInfoKHR.imageArrayLayers = 1;
-				swapchainCreateInfoKHR.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-				swapchainCreateInfoKHR.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-				swapchainCreateInfoKHR.preTransform = surfaceCapabilitiesKHR.currentTransform;
-				swapchainCreateInfoKHR.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-				swapchainCreateInfoKHR.presentMode = presentModeKHR;
-				swapchainCreateInfoKHR.clipped = TRUE;
+				// Get Vk Swapchain Images Views 
+				{
+					vectorVkImagesViews.resize(vectorVkImages.size());
 
-				vkCreateSwapchainKHR(hVkDevice, &swapchainCreateInfoKHR, nullptr, &hVkSwapchainKHR);
+					for (size_t i = 0; i < vectorVkImagesViews.size(); i++)
+					{
+						VkImageViewCreateInfo imageViewCreateInfo = {};
+						imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+						imageViewCreateInfo.image = vectorVkImages[i];
+						imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+						imageViewCreateInfo.format = surfaceFormatKHR.format;
+						imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+						imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+						imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+						imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+						imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+						imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+						imageViewCreateInfo.subresourceRange.levelCount = 1;
+						imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+						imageViewCreateInfo.subresourceRange.layerCount = 1;
+
+						vkCreateImageView(hVkDevice, &imageViewCreateInfo, nullptr, &vectorVkImagesViews[i]);
+					}
+				}
+
+				// Create Vk Render Pass 
+				{
+					VkAttachmentDescription attachmentDescription = {};
+					attachmentDescription.format = surfaceFormatKHR.format;
+					attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
+					attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+					attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+					attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+					attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+					attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+					VkAttachmentReference attachmentReference = {};
+					attachmentReference.attachment = 0;
+					attachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+					VkSubpassDescription subpassDescription = {};
+					subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+					subpassDescription.colorAttachmentCount = 1;
+					subpassDescription.pColorAttachments = &attachmentReference;
+
+					VkSubpassDependency subpassDependency = {};
+					subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+					subpassDependency.dstSubpass = 0;
+					subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+					subpassDependency.srcAccessMask = 0;
+					subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+					subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+					VkRenderPassCreateInfo renderPassCreateInfo = {};
+					renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+					renderPassCreateInfo.attachmentCount = 1;
+					renderPassCreateInfo.pAttachments = &attachmentDescription;
+					renderPassCreateInfo.subpassCount = 1;
+					renderPassCreateInfo.pSubpasses = &subpassDescription;
+					renderPassCreateInfo.dependencyCount = 1;
+					renderPassCreateInfo.pDependencies = &subpassDependency;
+
+					vkCreateRenderPass(hVkDevice, &renderPassCreateInfo, nullptr, &hVkRenderPass);
+				}
 			}
 		}
 
-		// Get Vk Swapchain Images 
+		// Create Vk Pipeline Layout 
 		{
-			unsigned uSwapchainImageCount = 0;
+			VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
+			pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+			pipelineLayoutCreateInfo.setLayoutCount = 0;
+			pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
 
-			vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
-
-			vectorVkImages.resize(uSwapchainImageCount);
-
-			vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
+			vkCreatePipelineLayout(hVkDevice, &pipelineLayoutCreateInfo, nullptr, &hVkPipelineLayout);
 		}
 
 		// Create Vk Pipeline 
 		{
-			hVkPipeline;
+			VkShaderModule hVertexVkShaderModule = 0;
+			// Create Vertex Vk Shader Module 
+			{
+				const char sVertexFile[] = "../resources/shaders/color.vertex.svp";
+				std::vector<unsigned char> vectorCodeBytes = getBytesFromFile(sVertexFile);
+
+				VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
+				shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+				shaderModuleCreateInfo.codeSize = vectorCodeBytes.size();
+				shaderModuleCreateInfo.pCode = static_cast<const uint32_t*>(static_cast<const void*>(vectorCodeBytes.data()));
+
+				vkCreateShaderModule(hVkDevice, &shaderModuleCreateInfo, nullptr, &hVertexVkShaderModule);
+			}
+
+			VkPipelineShaderStageCreateInfo vertexShaderStageInfo = {};
+			vertexShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			vertexShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+			vertexShaderStageInfo.module = hVertexVkShaderModule;
+			vertexShaderStageInfo.pName = "main";
+
+			VkShaderModule hFragmentVkShaderModule = 0;
+			// Create Fragment Vk Shader Module 
+			{
+				const char sFragmentFile[] = "../resources/shaders/color.fragment.svp";
+				std::vector<unsigned char> vectorCodeBytes = getBytesFromFile(sFragmentFile);
+
+				VkShaderModuleCreateInfo shaderModuleCreateInfo = {};
+				shaderModuleCreateInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+				shaderModuleCreateInfo.codeSize = vectorCodeBytes.size();
+				shaderModuleCreateInfo.pCode = static_cast<const uint32_t*>(static_cast<const void*>(vectorCodeBytes.data()));
+
+				vkCreateShaderModule(hVkDevice, &shaderModuleCreateInfo, nullptr, &hFragmentVkShaderModule);
+			}
+
+			VkPipelineShaderStageCreateInfo fragmentShaderStageInfo = {};
+			fragmentShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			fragmentShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			fragmentShaderStageInfo.module = hFragmentVkShaderModule;
+			fragmentShaderStageInfo.pName = "main";
+
+			VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = {};
+			vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+			VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {};
+			inputAssemblyStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+			inputAssemblyStateCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+			inputAssemblyStateCreateInfo.primitiveRestartEnable = FALSE;
+
+			VkViewport viewport = { 0.f, 0.f,
+				static_cast<float>(currentExtent.width), static_cast<float>(currentExtent.height),
+				0.f, 1.f };
+
+			VkRect2D scissor = { 0, 0, currentExtent };
+
+			VkPipelineViewportStateCreateInfo viewportStateCreateInfo = {};
+			viewportStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+			viewportStateCreateInfo.viewportCount = 1;
+			viewportStateCreateInfo.pViewports = &viewport;
+			viewportStateCreateInfo.scissorCount = 1;
+			viewportStateCreateInfo.pScissors = &scissor;
+
+			VkPipelineRasterizationStateCreateInfo rasterizationStateCreateInfo = {};
+			rasterizationStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+			rasterizationStateCreateInfo.depthClampEnable = FALSE;
+			rasterizationStateCreateInfo.rasterizerDiscardEnable = FALSE;
+			rasterizationStateCreateInfo.polygonMode = VK_POLYGON_MODE_FILL;
+			rasterizationStateCreateInfo.lineWidth = 1.f;
+			rasterizationStateCreateInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+			rasterizationStateCreateInfo.frontFace = VK_FRONT_FACE_CLOCKWISE;
+			rasterizationStateCreateInfo.depthBiasEnable = FALSE;
+
+			VkPipelineMultisampleStateCreateInfo multisampleStateCreateInfo = {};
+			multisampleStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+			multisampleStateCreateInfo.sampleShadingEnable = FALSE;
+			multisampleStateCreateInfo.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+			VkPipelineColorBlendAttachmentState colorBlendAttachmentState = {};
+			colorBlendAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+			colorBlendAttachmentState.blendEnable = FALSE;
+
+			VkPipelineColorBlendStateCreateInfo colorBlendStateCreateInfo = {};
+			colorBlendStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+			colorBlendStateCreateInfo.logicOpEnable = FALSE;
+			colorBlendStateCreateInfo.logicOp = VK_LOGIC_OP_COPY;
+			colorBlendStateCreateInfo.attachmentCount = 1;
+			colorBlendStateCreateInfo.pAttachments = &colorBlendAttachmentState;
+			colorBlendStateCreateInfo.blendConstants[0] = 0.f;
+			colorBlendStateCreateInfo.blendConstants[1] = 0.f;
+			colorBlendStateCreateInfo.blendConstants[2] = 0.f;
+			colorBlendStateCreateInfo.blendConstants[3] = 0.f;
+
+			VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo = {};
+			graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+			graphicsPipelineCreateInfo.stageCount = 2;
+			VkPipelineShaderStageCreateInfo shaderStages[] = { vertexShaderStageInfo, fragmentShaderStageInfo };
+			graphicsPipelineCreateInfo.pStages = shaderStages;
+			graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
+			graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemblyStateCreateInfo;
+			graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
+			graphicsPipelineCreateInfo.pRasterizationState = &rasterizationStateCreateInfo;
+			graphicsPipelineCreateInfo.pMultisampleState = &multisampleStateCreateInfo;
+			graphicsPipelineCreateInfo.pColorBlendState = &colorBlendStateCreateInfo;
+			graphicsPipelineCreateInfo.layout = hVkPipelineLayout;
+			graphicsPipelineCreateInfo.renderPass = hVkRenderPass;
+
+			vkCreateGraphicsPipelines(hVkDevice, VK_NULL_HANDLE, 1, &graphicsPipelineCreateInfo, nullptr, &hVkPipeline);
+
+			vkDestroyShaderModule(hVkDevice, hVertexVkShaderModule, nullptr);
+			vkDestroyShaderModule(hVkDevice, hFragmentVkShaderModule, nullptr);
+		}
+
+		// Create Vk Frame buffers 
+		{
+			vectorVkFramebuffers.resize(vectorVkImages.size());
+
+			for (size_t i = 0; i < vectorVkFramebuffers.size(); ++i)
+			{
+				VkFramebufferCreateInfo framebufferCreateInfo = {};
+				framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+				framebufferCreateInfo.renderPass = hVkRenderPass;
+				framebufferCreateInfo.attachmentCount = 1;
+				framebufferCreateInfo.pAttachments = &vectorVkImagesViews[i];
+				framebufferCreateInfo.width = currentExtent.width;
+				framebufferCreateInfo.height = currentExtent.height;
+				framebufferCreateInfo.layers = 1;
+
+				vkCreateFramebuffer(hVkDevice, &framebufferCreateInfo, nullptr, &vectorVkFramebuffers[i]);
+			}
+		}
+
+		// Vertex Position 
+		{
+			float vVertexPositions[8][3] = {
+				{ -1.0f, -1.0f, -1.0f },
+				{ -1.0f, -1.0f,  1.0f },
+				{ -1.0f,  1.0f, -1.0f },
+				{ -1.0f,  1.0f,  1.0f },
+				{ 1.0f, -1.0f, -1.0f },
+				{ 1.0f, -1.0f,  1.0f },
+				{ 1.0f,  1.0f, -1.0f },
+				{ 1.0f,  1.0f,  1.0f },
+			};
+		}
+
+		// Vertex Color 
+		{
+			float vVertexColors[8][3] = {
+				{ 0.0f, 0.0f, 0.0f },
+				{ 0.0f, 0.0f, 1.0f },
+				{ 0.0f, 1.0f, 0.0f },
+				{ 0.0f, 1.0f, 1.0f },
+				{ 1.0f, 0.0f, 0.0f },
+				{ 1.0f, 0.0f, 1.0f },
+				{ 1.0f, 1.0f, 0.0f },
+				{ 1.0f, 1.0f, 1.0f },
+			};
+		}
+
+		// Index 
+		{
+			unsigned short indices[] = {
+				0, 1, 2, // -x 
+				1, 3, 2,
+				4, 6, 5, // +x 
+				5, 6, 7,
+				0, 5, 1, // -y 
+				0, 4, 5,
+				2, 7, 6, // +y 
+				2, 3, 7,
+				0, 6, 4, // -z 
+				0, 2, 6,
+				1, 7, 3, // +z 
+				1, 5, 7,
+			};
 		}
 
 		// Create Vk Command Pool 
@@ -339,11 +614,12 @@ int main(const int argc, const char* const argv[])
 			imageSubresourceRange.levelCount = 1;
 			imageSubresourceRange.baseArrayLayer = 0;
 			imageSubresourceRange.layerCount = 1;
-
+			
 			for (int i = 0; i < vectorVkImages.size(); ++i)
 			{
 				vkBeginCommandBuffer(vectorVkCommandBuffers[i], &commandBufferBeginInfo);
 
+#if 1
 				// Vk Image Memory Barrier Present To Clear 
 				{
 					VkImageMemoryBarrier imageMemoryBarrierPresentToClear = {};
@@ -359,10 +635,31 @@ int main(const int argc, const char* const argv[])
 
 					vkCmdPipelineBarrier(vectorVkCommandBuffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrierPresentToClear);
 				}
+#endif // 1
 
-				vkCmdClearColorImage(vectorVkCommandBuffers[i], vectorVkImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColorValue, 1, &imageSubresourceRange);
-				vkCmdBindPipeline(vectorVkCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hVkPipeline);
+				// vkCmdClearColorImage(vectorVkCommandBuffers[i], vectorVkImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColorValue, 1, &imageSubresourceRange);
 
+				// Vk Render Pass 
+				{
+					VkRenderPassBeginInfo renderPassBeginInfo = {};
+					renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+					renderPassBeginInfo.renderPass = hVkRenderPass;
+					renderPassBeginInfo.framebuffer = vectorVkFramebuffers[i];
+					renderPassBeginInfo.renderArea.offset = { 0, 0 };
+					renderPassBeginInfo.renderArea.extent = currentExtent;
+
+					VkClearValue clearColor = { clearColorValue };
+					renderPassBeginInfo.clearValueCount = 1;
+					renderPassBeginInfo.pClearValues = &clearColor;
+
+					vkCmdBeginRenderPass(vectorVkCommandBuffers[i], &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+					{
+						vkCmdBindPipeline(vectorVkCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, hVkPipeline);
+					}
+					vkCmdEndRenderPass(vectorVkCommandBuffers[i]);
+				}
+
+#if 1
 				// Vk Image Memory Barrier Clear To Present 
 				{
 					VkImageMemoryBarrier imageMemoryBarrierClearToPresent = {};
@@ -378,6 +675,7 @@ int main(const int argc, const char* const argv[])
 
 					vkCmdPipelineBarrier(vectorVkCommandBuffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrierClearToPresent);
 				}
+#endif // 1
 
 				vkEndCommandBuffer(vectorVkCommandBuffers[i]);
 			}
@@ -440,11 +738,11 @@ int main(const int argc, const char* const argv[])
 		Sleep(15);
 	}
 
-	vkDestroySemaphore(hVkDevice, hVkSemaphoreImageAvalable, nullptr);
-	hVkSemaphoreImageAvalable = 0;
-
 	vkDestroySemaphore(hVkDevice, hVkSemaphoreRenderFinished, nullptr);
 	hVkSemaphoreRenderFinished = 0;
+
+	vkDestroySemaphore(hVkDevice, hVkSemaphoreImageAvalable, nullptr);
+	hVkSemaphoreImageAvalable = 0;
 
 	vkFreeCommandBuffers(hVkDevice, hVkCommandPool, static_cast<uint32_t>(vectorVkCommandBuffers.size()), vectorVkCommandBuffers.data());
 	vectorVkCommandBuffers.clear();
@@ -452,17 +750,29 @@ int main(const int argc, const char* const argv[])
 	vkDestroyCommandPool(hVkDevice, hVkCommandPool, nullptr);
 	hVkCommandPool = 0;
 
-	for (const VkImage& hVkImage : vectorVkImages)
+	for (const VkFramebuffer& hVkFramebuffer : vectorVkFramebuffers)
 	{
-		vkDestroyImage(hVkDevice, hVkImage, nullptr);
+		vkDestroyFramebuffer(hVkDevice, hVkFramebuffer, nullptr);
 	}
-	vectorVkImages.clear();
-
-	// vkDestroySwapchainKHR(hVkDevice, hVkSwapchainKHR, nullptr);
-	// hVkSwapchainKHR = 0;
+	vectorVkFramebuffers.clear();
 
 	vkDestroyPipeline(hVkDevice, hVkPipeline, nullptr);
 	hVkPipeline = 0;
+
+	vkDestroyPipelineLayout(hVkDevice, hVkPipelineLayout, nullptr);
+	hVkPipelineLayout = 0;
+
+	vkDestroyRenderPass(hVkDevice, hVkRenderPass, nullptr);
+	hVkRenderPass = 0;
+
+	for (const VkImageView& hVkImageView : vectorVkImagesViews)
+	{
+		vkDestroyImageView(hVkDevice, hVkImageView, nullptr);
+	}
+	vectorVkImagesViews.clear();
+
+	vkDestroySwapchainKHR(hVkDevice, hVkSwapchainKHR, nullptr);
+	hVkSwapchainKHR = 0;
 
 	vkDestroyDevice(hVkDevice, nullptr);
 	hVkDevice = nullptr;
@@ -484,24 +794,7 @@ void renderProc(void)
 {
 }
 
-static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
-{
-	switch (Msg)
-	{
-	case WM_DESTROY:
-		PostQuitMessage(0);
-		return 0;
-
-	case WM_CLOSE:
-		DestroyWindow(hWnd);
-		return 0;
-
-	}
-
-	return DefWindowProcA(hWnd, Msg, wParam, lParam);
-}
-
-std::vector<char> getFromFile(const char* filename)
+std::vector<char> getCharsFromFile(const char* filename)
 {
 	std::vector<char> result(0ULL);
 
@@ -527,5 +820,50 @@ std::vector<char> getFromFile(const char* filename)
 	}
 
 	return result;
+}
+
+std::vector<unsigned char> getBytesFromFile(const char* filename)
+{
+	std::vector<unsigned char> result(0ULL);
+
+	FILE* filePtr = fopen(filename, "rb");
+
+	if (!filePtr)
+	{
+		char path[2048];
+		sprintf(path, "./%s", filename);
+		filePtr = fopen(path, "rb");
+	}
+
+	if (filePtr)
+	{
+		fseek(filePtr, 0L, SEEK_END);
+		const long lSize = ftell(filePtr);
+
+		result.resize(lSize);
+
+		fread(result.data(), 1, lSize, filePtr);
+
+		fclose(filePtr);
+	}
+
+	return result;
+}
+
+static LRESULT WINAPI WindowProc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
+{
+	switch (Msg)
+	{
+	case WM_DESTROY:
+		PostQuitMessage(0);
+		return 0;
+
+	case WM_CLOSE:
+		DestroyWindow(hWnd);
+		return 0;
+
+	}
+
+	return DefWindowProcA(hWnd, Msg, wParam, lParam);
 }
 
