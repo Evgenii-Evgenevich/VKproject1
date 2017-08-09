@@ -149,244 +149,242 @@ int main(const int argc, const char* const argv[])
 
 		VkExtent2D currentExtent = {};
 
+		VkPhysicalDevice hVkPhysicalDevice = nullptr;
+
+		// Get Vk PhysicalDevice 
 		{
-			VkPhysicalDevice hVkPhysicalDevice = nullptr;
+			unsigned uPhysicalDeviceCount = 0;
+			vkEnumeratePhysicalDevices(hVkInstance, &uPhysicalDeviceCount, nullptr);
 
-			// Get Vk PhysicalDevice 
+			if (uPhysicalDeviceCount)
 			{
-				unsigned uPhysicalDeviceCount = 0;
-				vkEnumeratePhysicalDevices(hVkInstance, &uPhysicalDeviceCount, nullptr);
+				std::vector<VkPhysicalDevice> vectorAllVkPhysicalDevices(uPhysicalDeviceCount);
+				vkEnumeratePhysicalDevices(hVkInstance, &uPhysicalDeviceCount, vectorAllVkPhysicalDevices.data());
 
-				if (uPhysicalDeviceCount)
+				for (const VkPhysicalDevice& hCurrentPhysicalDevice : vectorAllVkPhysicalDevices)
 				{
-					std::vector<VkPhysicalDevice> vectorAllVkPhysicalDevices(uPhysicalDeviceCount);
-					vkEnumeratePhysicalDevices(hVkInstance, &uPhysicalDeviceCount, vectorAllVkPhysicalDevices.data());
+					VkPhysicalDeviceProperties physicalDeviceProperties = {};
+					vkGetPhysicalDeviceProperties(hCurrentPhysicalDevice, &physicalDeviceProperties);
+					printf("%s\n", physicalDeviceProperties.deviceName);
 
-					for (const VkPhysicalDevice& hCurrentPhysicalDevice : vectorAllVkPhysicalDevices)
+					unsigned uQueueFamilyPropertyCount = 0;
+					vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, nullptr);
+
+					// Get Queue Family Index 
+					if (uQueueFamilyPropertyCount)
 					{
-						VkPhysicalDeviceProperties physicalDeviceProperties = {};
-						vkGetPhysicalDeviceProperties(hCurrentPhysicalDevice, &physicalDeviceProperties);
-						printf("%s\n", physicalDeviceProperties.deviceName);
+						VkQueueFamilyProperties* pAllVkQueueFamilyProperties = new VkQueueFamilyProperties[uQueueFamilyPropertyCount];
+						vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, pAllVkQueueFamilyProperties);
 
-						unsigned uQueueFamilyPropertyCount = 0;
-						vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, nullptr);
-
-						// Get Queue Family Index 
-						if (uQueueFamilyPropertyCount)
+						for (unsigned index = 0; index < uQueueFamilyPropertyCount; ++index)
 						{
-							VkQueueFamilyProperties* pAllVkQueueFamilyProperties = new VkQueueFamilyProperties[uQueueFamilyPropertyCount];
-							vkGetPhysicalDeviceQueueFamilyProperties(hCurrentPhysicalDevice, &uQueueFamilyPropertyCount, pAllVkQueueFamilyProperties);
+							VkBool32 bIsSupported = FALSE;
+							vkGetPhysicalDeviceSurfaceSupportKHR(hCurrentPhysicalDevice, index, hVkSurfaceKHR, &bIsSupported);
 
-							for (unsigned index = 0; index < uQueueFamilyPropertyCount; ++index)
+							if (bIsSupported && pAllVkQueueFamilyProperties[index].queueFlags & VK_QUEUE_GRAPHICS_BIT && pAllVkQueueFamilyProperties[index].queueCount)
 							{
-								VkBool32 bIsSupported = FALSE;
-								vkGetPhysicalDeviceSurfaceSupportKHR(hCurrentPhysicalDevice, index, hVkSurfaceKHR, &bIsSupported);
-
-								if (bIsSupported && pAllVkQueueFamilyProperties[index].queueFlags & VK_QUEUE_GRAPHICS_BIT && pAllVkQueueFamilyProperties[index].queueCount)
-								{
-									hVkPhysicalDevice = hCurrentPhysicalDevice;
-									iQueueFamilyIndex = index;
-									break;
-								}
+								hVkPhysicalDevice = hCurrentPhysicalDevice;
+								iQueueFamilyIndex = index;
+								break;
 							}
-
-							delete[] pAllVkQueueFamilyProperties;
-							pAllVkQueueFamilyProperties = nullptr;
 						}
 
-						if (hVkPhysicalDevice)
+						delete[] pAllVkQueueFamilyProperties;
+						pAllVkQueueFamilyProperties = nullptr;
+					}
+
+					if (hVkPhysicalDevice)
+					{
+						break;
+					}
+				}
+			}
+		}
+
+		// Create Vk Device 
+		{
+			VkDeviceQueueCreateInfo deviceQueueCreateInfo = {};
+			deviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+			deviceQueueCreateInfo.queueFamilyIndex = iQueueFamilyIndex;
+			deviceQueueCreateInfo.queueCount = 1;
+			const float fQueuePriorities[] = { 1.f };
+			deviceQueueCreateInfo.pQueuePriorities = fQueuePriorities;
+
+			VkDeviceCreateInfo deviceCreateInfo = {};
+			deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+			deviceCreateInfo.queueCreateInfoCount = 1;
+			deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
+			deviceCreateInfo.enabledExtensionCount = 1;
+			const char VK_KHR_SWAPCHAIN_EXTENSION_NAME_[] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
+			const char* EnabledExtensionNames[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME_ };
+			deviceCreateInfo.ppEnabledExtensionNames = EnabledExtensionNames;
+
+			vkCreateDevice(hVkPhysicalDevice, &deviceCreateInfo, nullptr, &hVkDevice);
+		}
+
+		// Get Vk Queue 
+		{
+			vkGetDeviceQueue(hVkDevice, iQueueFamilyIndex, 0, &hVkQueue);
+		}
+
+		{
+			VkSurfaceFormatKHR surfaceFormatKHR = {};
+			// Get Vk Surface Format 
+			{
+				unsigned upSurfaceFormatCount = 0;
+				vkGetPhysicalDeviceSurfaceFormatsKHR(hVkPhysicalDevice, hVkSurfaceKHR, &upSurfaceFormatCount, nullptr);
+
+				if (upSurfaceFormatCount)
+				{
+					std::vector<VkSurfaceFormatKHR> vectorSurfaceFormats(upSurfaceFormatCount);
+
+					vkGetPhysicalDeviceSurfaceFormatsKHR(hVkPhysicalDevice, hVkSurfaceKHR, &upSurfaceFormatCount, vectorSurfaceFormats.data());
+
+					surfaceFormatKHR = vectorSurfaceFormats[0];
+
+					if (upSurfaceFormatCount > 1)
+					{
+						for (const VkSurfaceFormatKHR& vkSurfaceFormatKHR : vectorSurfaceFormats)
 						{
-							break;
+							if (vkSurfaceFormatKHR.format == VK_FORMAT_B8G8R8A8_UNORM && vkSurfaceFormatKHR.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+							{
+								surfaceFormatKHR = vkSurfaceFormatKHR;
+							}
 						}
+					}
+					else if (vectorSurfaceFormats[0].format == VK_FORMAT_UNDEFINED)
+					{
+						surfaceFormatKHR = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
 					}
 				}
 			}
 
-			// Create Vk Device 
+			// Create Vk Swapchain 
 			{
-				VkDeviceQueueCreateInfo deviceQueueCreateInfo = {};
-				deviceQueueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-				deviceQueueCreateInfo.queueFamilyIndex = iQueueFamilyIndex;
-				deviceQueueCreateInfo.queueCount = 1;
-				const float fQueuePriorities[] = { 1.f };
-				deviceQueueCreateInfo.pQueuePriorities = fQueuePriorities;
-
-				VkDeviceCreateInfo deviceCreateInfo = {};
-				deviceCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-				deviceCreateInfo.queueCreateInfoCount = 1;
-				deviceCreateInfo.pQueueCreateInfos = &deviceQueueCreateInfo;
-				deviceCreateInfo.enabledExtensionCount = 1;
-				const char VK_KHR_SWAPCHAIN_EXTENSION_NAME_[] = VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-				const char* EnabledExtensionNames[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME_ };
-				deviceCreateInfo.ppEnabledExtensionNames = EnabledExtensionNames;
-
-				vkCreateDevice(hVkPhysicalDevice, &deviceCreateInfo, nullptr, &hVkDevice);
-			}
-
-			// Get Vk Queue 
-			{
-				vkGetDeviceQueue(hVkDevice, iQueueFamilyIndex, 0, &hVkQueue);
-			}
-
-			{
-				VkSurfaceFormatKHR surfaceFormatKHR = {};
-				// Get Vk Surface Format 
+				VkPresentModeKHR presentModeKHR = VK_PRESENT_MODE_FIFO_KHR;
+				// Get Vk Present Mode 
 				{
-					unsigned upSurfaceFormatCount = 0;
-					vkGetPhysicalDeviceSurfaceFormatsKHR(hVkPhysicalDevice, hVkSurfaceKHR, &upSurfaceFormatCount, nullptr);
+					unsigned uPresentModeCount = 0;
 
-					if (upSurfaceFormatCount)
+					vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, nullptr);
+
+					if (uPresentModeCount)
 					{
-						std::vector<VkSurfaceFormatKHR> vectorSurfaceFormats(upSurfaceFormatCount);
+						std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModeCount);
 
-						vkGetPhysicalDeviceSurfaceFormatsKHR(hVkPhysicalDevice, hVkSurfaceKHR, &upSurfaceFormatCount, vectorSurfaceFormats.data());
+						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, vectorPresentModes.data());
 
-						surfaceFormatKHR = vectorSurfaceFormats[0];
-
-						if (upSurfaceFormatCount > 1)
+						for (const VkPresentModeKHR& vkPresentModeKHR : vectorPresentModes)
 						{
-							for (const VkSurfaceFormatKHR& vkSurfaceFormatKHR : vectorSurfaceFormats)
+							if (vkPresentModeKHR == VK_PRESENT_MODE_MAILBOX_KHR)
 							{
-								if (vkSurfaceFormatKHR.format == VK_FORMAT_B8G8R8A8_UNORM && vkSurfaceFormatKHR.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-								{
-									surfaceFormatKHR = vkSurfaceFormatKHR;
-								}
-							}
-						}
-						else if (vectorSurfaceFormats[0].format == VK_FORMAT_UNDEFINED)
-						{
-							surfaceFormatKHR = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
-						}
-					}
-				}
-
-				// Create Vk Swapchain 
-				{
-					VkPresentModeKHR presentModeKHR = VK_PRESENT_MODE_FIFO_KHR;
-					// Get Vk Present Mode 
-					{
-						unsigned uPresentModeCount = 0;
-
-						vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, nullptr);
-
-						if (uPresentModeCount)
-						{
-							std::vector<VkPresentModeKHR> vectorPresentModes(uPresentModeCount);
-
-							vkGetPhysicalDeviceSurfacePresentModesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &uPresentModeCount, vectorPresentModes.data());
-
-							for (const VkPresentModeKHR& vkPresentModeKHR : vectorPresentModes)
-							{
-								if (vkPresentModeKHR == VK_PRESENT_MODE_MAILBOX_KHR)
-								{
-									presentModeKHR = vkPresentModeKHR;
-									break;
-								}
+								presentModeKHR = vkPresentModeKHR;
+								break;
 							}
 						}
 					}
-
-					VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
-					// Get Vk Surface Capabilities 
-					{
-						vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
-						currentExtent = surfaceCapabilitiesKHR.currentExtent;
-					}
-
-					VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
-					swapchainCreateInfoKHR.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-					swapchainCreateInfoKHR.surface = hVkSurfaceKHR;
-					swapchainCreateInfoKHR.minImageCount = surfaceCapabilitiesKHR.maxImageCount < 3 ? surfaceCapabilitiesKHR.maxImageCount : 3;
-					swapchainCreateInfoKHR.imageFormat = surfaceFormatKHR.format;
-					swapchainCreateInfoKHR.imageColorSpace = surfaceFormatKHR.colorSpace;
-					swapchainCreateInfoKHR.imageExtent = currentExtent;
-					swapchainCreateInfoKHR.imageArrayLayers = 1;
-					swapchainCreateInfoKHR.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-					swapchainCreateInfoKHR.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-					swapchainCreateInfoKHR.preTransform = surfaceCapabilitiesKHR.currentTransform;
-					swapchainCreateInfoKHR.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-					swapchainCreateInfoKHR.presentMode = presentModeKHR;
-					swapchainCreateInfoKHR.clipped = TRUE;
-
-					vkCreateSwapchainKHR(hVkDevice, &swapchainCreateInfoKHR, nullptr, &hVkSwapchainKHR);
 				}
 
-				// Get Vk Swapchain Images 
+				VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
+				// Get Vk Surface Capabilities 
 				{
-					unsigned uSwapchainImageCount = 0;
-
-					vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
-
-					vectorVkImages.resize(uSwapchainImageCount);
-
-					vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
+					vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+					currentExtent = surfaceCapabilitiesKHR.currentExtent;
 				}
 
-				// Get Vk Swapchain Images Views 
+				VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
+				swapchainCreateInfoKHR.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+				swapchainCreateInfoKHR.surface = hVkSurfaceKHR;
+				swapchainCreateInfoKHR.minImageCount = surfaceCapabilitiesKHR.maxImageCount < 3 ? surfaceCapabilitiesKHR.maxImageCount : 3;
+				swapchainCreateInfoKHR.imageFormat = surfaceFormatKHR.format;
+				swapchainCreateInfoKHR.imageColorSpace = surfaceFormatKHR.colorSpace;
+				swapchainCreateInfoKHR.imageExtent = currentExtent;
+				swapchainCreateInfoKHR.imageArrayLayers = 1;
+				swapchainCreateInfoKHR.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+				swapchainCreateInfoKHR.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+				swapchainCreateInfoKHR.preTransform = surfaceCapabilitiesKHR.currentTransform;
+				swapchainCreateInfoKHR.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+				swapchainCreateInfoKHR.presentMode = presentModeKHR;
+				swapchainCreateInfoKHR.clipped = TRUE;
+
+				vkCreateSwapchainKHR(hVkDevice, &swapchainCreateInfoKHR, nullptr, &hVkSwapchainKHR);
+			}
+
+			// Get Vk Swapchain Images 
+			{
+				unsigned uSwapchainImageCount = 0;
+
+				vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
+
+				vectorVkImages.resize(uSwapchainImageCount);
+
+				vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
+			}
+
+			// Get Vk Swapchain Images Views 
+			{
+				vectorVkImagesViews.resize(vectorVkImages.size());
+
+				for (size_t i = 0; i < vectorVkImagesViews.size(); i++)
 				{
-					vectorVkImagesViews.resize(vectorVkImages.size());
+					VkImageViewCreateInfo imageViewCreateInfo = {};
+					imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+					imageViewCreateInfo.image = vectorVkImages[i];
+					imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+					imageViewCreateInfo.format = surfaceFormatKHR.format;
+					imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+					imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+					imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+					imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+					imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
+					imageViewCreateInfo.subresourceRange.levelCount = 1;
+					imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
+					imageViewCreateInfo.subresourceRange.layerCount = 1;
 
-					for (size_t i = 0; i < vectorVkImagesViews.size(); i++)
-					{
-						VkImageViewCreateInfo imageViewCreateInfo = {};
-						imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-						imageViewCreateInfo.image = vectorVkImages[i];
-						imageViewCreateInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-						imageViewCreateInfo.format = surfaceFormatKHR.format;
-						imageViewCreateInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-						imageViewCreateInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-						imageViewCreateInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-						imageViewCreateInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-						imageViewCreateInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						imageViewCreateInfo.subresourceRange.baseMipLevel = 0;
-						imageViewCreateInfo.subresourceRange.levelCount = 1;
-						imageViewCreateInfo.subresourceRange.baseArrayLayer = 0;
-						imageViewCreateInfo.subresourceRange.layerCount = 1;
-
-						vkCreateImageView(hVkDevice, &imageViewCreateInfo, nullptr, &vectorVkImagesViews[i]);
-					}
+					vkCreateImageView(hVkDevice, &imageViewCreateInfo, nullptr, &vectorVkImagesViews[i]);
 				}
+			}
 
-				// Create Vk Render Pass 
-				{
-					VkAttachmentDescription attachmentDescription = {};
-					attachmentDescription.format = surfaceFormatKHR.format;
-					attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
-					attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-					attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-					attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-					attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-					attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-					attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+			// Create Vk Render Pass 
+			{
+				VkAttachmentDescription attachmentDescription = {};
+				attachmentDescription.format = surfaceFormatKHR.format;
+				attachmentDescription.samples = VK_SAMPLE_COUNT_1_BIT;
+				attachmentDescription.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+				attachmentDescription.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+				attachmentDescription.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+				attachmentDescription.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+				attachmentDescription.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				attachmentDescription.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-					VkAttachmentReference attachmentReference = {};
-					attachmentReference.attachment = 0;
-					attachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+				VkAttachmentReference attachmentReference = {};
+				attachmentReference.attachment = 0;
+				attachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-					VkSubpassDescription subpassDescription = {};
-					subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-					subpassDescription.colorAttachmentCount = 1;
-					subpassDescription.pColorAttachments = &attachmentReference;
+				VkSubpassDescription subpassDescription = {};
+				subpassDescription.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+				subpassDescription.colorAttachmentCount = 1;
+				subpassDescription.pColorAttachments = &attachmentReference;
 
-					VkSubpassDependency subpassDependency = {};
-					subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-					subpassDependency.dstSubpass = 0;
-					subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-					subpassDependency.srcAccessMask = 0;
-					subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-					subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+				VkSubpassDependency subpassDependency = {};
+				subpassDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+				subpassDependency.dstSubpass = 0;
+				subpassDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+				subpassDependency.srcAccessMask = 0;
+				subpassDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+				subpassDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-					VkRenderPassCreateInfo renderPassCreateInfo = {};
-					renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-					renderPassCreateInfo.attachmentCount = 1;
-					renderPassCreateInfo.pAttachments = &attachmentDescription;
-					renderPassCreateInfo.subpassCount = 1;
-					renderPassCreateInfo.pSubpasses = &subpassDescription;
-					renderPassCreateInfo.dependencyCount = 1;
-					renderPassCreateInfo.pDependencies = &subpassDependency;
+				VkRenderPassCreateInfo renderPassCreateInfo = {};
+				renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+				renderPassCreateInfo.attachmentCount = 1;
+				renderPassCreateInfo.pAttachments = &attachmentDescription;
+				renderPassCreateInfo.subpassCount = 1;
+				renderPassCreateInfo.pSubpasses = &subpassDescription;
+				renderPassCreateInfo.dependencyCount = 1;
+				renderPassCreateInfo.pDependencies = &subpassDependency;
 
-					vkCreateRenderPass(hVkDevice, &renderPassCreateInfo, nullptr, &hVkRenderPass);
-				}
+				vkCreateRenderPass(hVkDevice, &renderPassCreateInfo, nullptr, &hVkRenderPass);
 			}
 		}
 
@@ -544,6 +542,74 @@ int main(const int argc, const char* const argv[])
 				{ 1.0f,  1.0f, -1.0f },
 				{ 1.0f,  1.0f,  1.0f },
 			};
+
+			size_t size = sizeof vVertexPositions;
+
+			VkBuffer hStagingVkBuffer = 0;
+			VkDeviceMemory hStagingVkDeviceMemory = 0;
+
+			// Create Staging Vk Buffer 
+			{
+				VkBufferCreateInfo bufferCreateInfo = {};
+				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+				bufferCreateInfo.size = size;
+				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+			}
+
+			// Allocate Staging Vk Memory 
+			{
+				VkMemoryRequirements memoryRequirements;
+				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+
+				VkMemoryAllocateInfo memoryAllocateInfo = {};
+				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+				// Get memory Type Index 
+				{
+					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					{
+						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						{
+							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+							break;
+						}
+					}
+				}
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+			}
+
+			// Map and copy 
+			{
+				void* data;
+
+				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+				memcpy(data, vVertexPositions, size);
+
+				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+			}
+
+			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+			// 
+			// 
+			// 
+
+			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
+			hStagingVkBuffer = 0;
+
+			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
+			hStagingVkDeviceMemory = 0;
 		}
 
 		// Vertex Color 
@@ -558,11 +624,79 @@ int main(const int argc, const char* const argv[])
 				{ 1.0f, 1.0f, 0.0f },
 				{ 1.0f, 1.0f, 1.0f },
 			};
+
+			size_t size = sizeof vVertexColors;
+
+			VkBuffer hStagingVkBuffer = 0;
+			VkDeviceMemory hStagingVkDeviceMemory = 0;
+
+			// Create Staging Vk Buffer 
+			{
+				VkBufferCreateInfo bufferCreateInfo = {};
+				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+				bufferCreateInfo.size = size;
+				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+			}
+
+			// Allocate Staging Vk Memory 
+			{
+				VkMemoryRequirements memoryRequirements;
+				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+
+				VkMemoryAllocateInfo memoryAllocateInfo = {};
+				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+				// Get memory Type Index 
+				{
+					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					{
+						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						{
+							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+							break;
+						}
+					}
+				}
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+			}
+
+			// Map and copy 
+			{
+				void* data;
+
+				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+				memcpy(data, vVertexColors, size);
+
+				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+			}
+
+			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+			// 
+			// 
+			// 
+
+			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
+			hStagingVkBuffer = 0;
+
+			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
+			hStagingVkDeviceMemory = 0;
 		}
 
 		// Index 
 		{
-			unsigned short indices[] = {
+			unsigned short indices[36] = {
 				0, 1, 2, // -x 
 				1, 3, 2,
 				4, 6, 5, // +x 
@@ -576,6 +710,74 @@ int main(const int argc, const char* const argv[])
 				1, 7, 3, // +z 
 				1, 5, 7,
 			};
+
+			size_t size = sizeof indices;
+
+			VkBuffer hStagingVkBuffer = 0;
+			VkDeviceMemory hStagingVkDeviceMemory = 0;
+
+			// Create Staging Vk Buffer 
+			{
+				VkBufferCreateInfo bufferCreateInfo = {};
+				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+				bufferCreateInfo.size = size;
+				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+			}
+
+			// Allocate Staging Vk Memory 
+			{
+				VkMemoryRequirements memoryRequirements;
+				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+
+				VkMemoryAllocateInfo memoryAllocateInfo = {};
+				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+				// Get memory Type Index 
+				{
+					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					{
+						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						{
+							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+							break;
+						}
+					}
+				}
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+			}
+
+			// Map and copy 
+			{
+				void* data;
+
+				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+				memcpy(data, indices, size);
+
+				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+			}
+
+			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+			// 
+			// 
+			// 
+
+			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
+			hStagingVkBuffer = 0;
+
+			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
+			hStagingVkDeviceMemory = 0;
 		}
 
 		// Create Vk Command Pool 
@@ -749,6 +951,24 @@ int main(const int argc, const char* const argv[])
 
 	vkDestroyCommandPool(hVkDevice, hVkCommandPool, nullptr);
 	hVkCommandPool = 0;
+
+	vkDestroyBuffer(hVkDevice, hIndexVkBuffer, nullptr);
+	hIndexVkBuffer = 0;
+
+	vkFreeMemory(hVkDevice, hIndexVkDeviceMemory, nullptr);
+	hIndexVkDeviceMemory = 0;
+
+	vkDestroyBuffer(hVkDevice, hVertexColorVkBuffer, nullptr);
+	hVertexColorVkBuffer = 0;
+
+	vkFreeMemory(hVkDevice, hVertexColorVkDeviceMemory, nullptr);
+	hVertexColorVkDeviceMemory = 0;
+
+	vkDestroyBuffer(hVkDevice, hVertexPositionVkBuffer, nullptr);
+	hVertexPositionVkBuffer = 0;
+
+	vkFreeMemory(hVkDevice, hVertexPositionVkDeviceMemory, nullptr);
+	hVertexPositionVkDeviceMemory = 0;
 
 	for (const VkFramebuffer& hVkFramebuffer : vectorVkFramebuffers)
 	{
