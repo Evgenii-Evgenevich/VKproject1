@@ -1,10 +1,13 @@
 #define VK_USE_PLATFORM_WIN32_KHR 1
 
 #include <vulkan/vulkan.h>
+
 #include <stdio.h>
 #include <windows.h>
 #include <vector>
 #include <thread>
+
+#include "ShaderStructures.h"
 
 #ifdef _MSC_VER
 #pragma comment ( lib, "vulkan-1" )
@@ -48,14 +51,14 @@ int main(const int argc, const char* const argv[])
 
 	VkPipeline hVkPipeline = 0;
 
-	VkDeviceMemory hVertexPositionVkDeviceMemory = 0;
-	VkBuffer hVertexPositionVkBuffer = 0;
-
-	VkDeviceMemory hVertexColorVkDeviceMemory = 0;
-	VkBuffer hVertexColorVkBuffer = 0;
+	VkDeviceMemory hVertexPositionColorVkDeviceMemory = 0;
+	VkBuffer hVertexPositionColorVkBuffer = 0;
 
 	VkDeviceMemory hIndexVkDeviceMemory = 0;
 	VkBuffer hIndexVkBuffer = 0;
+
+	VkBuffer hModelViewProjectionVkBuffer = 0;
+	VkDeviceMemory hModelViewProjectionVkDeviceMemory = 0;
 
 	VkCommandPool hVkCommandPool = 0;
 
@@ -402,6 +405,8 @@ int main(const int argc, const char* const argv[])
 
 		// Create Vk Pipeline 
 		{
+			VkPipelineShaderStageCreateInfo shaderStagesCreateInfos[] = { {}, {} };
+
 			VkShaderModule hVertexVkShaderModule = 0;
 			// Create Vertex Vk Shader Module 
 			{
@@ -416,11 +421,11 @@ int main(const int argc, const char* const argv[])
 				vkCreateShaderModule(hVkDevice, &shaderModuleCreateInfo, nullptr, &hVertexVkShaderModule);
 			}
 
-			VkPipelineShaderStageCreateInfo vertexShaderStageInfo = {};
-			vertexShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			vertexShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-			vertexShaderStageInfo.module = hVertexVkShaderModule;
-			vertexShaderStageInfo.pName = "main";
+			// VkPipelineShaderStageCreateInfo vertexShaderStageInfo = {};
+			shaderStagesCreateInfos[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shaderStagesCreateInfos[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+			shaderStagesCreateInfos[0].module = hVertexVkShaderModule;
+			shaderStagesCreateInfos[0].pName = "main";
 
 			VkShaderModule hFragmentVkShaderModule = 0;
 			// Create Fragment Vk Shader Module 
@@ -436,21 +441,41 @@ int main(const int argc, const char* const argv[])
 				vkCreateShaderModule(hVkDevice, &shaderModuleCreateInfo, nullptr, &hFragmentVkShaderModule);
 			}
 
-			VkPipelineShaderStageCreateInfo fragmentShaderStageInfo = {};
-			fragmentShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-			fragmentShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-			fragmentShaderStageInfo.module = hFragmentVkShaderModule;
-			fragmentShaderStageInfo.pName = "main";
+			// VkPipelineShaderStageCreateInfo fragmentShaderStageInfo = {};
+			shaderStagesCreateInfos[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+			shaderStagesCreateInfos[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+			shaderStagesCreateInfos[1].module = hFragmentVkShaderModule;
+			shaderStagesCreateInfos[1].pName = "main";
+
+			VkVertexInputBindingDescription vertexInputBindingDescription = {};
+			vertexInputBindingDescription.binding = 0;
+			vertexInputBindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+			VkVertexInputAttributeDescription vertexInputAttributsDescriptions[] = { {}, {} };
+			// Attribute location 0: Position 
+			vertexInputAttributsDescriptions[0].binding = 0;
+			vertexInputAttributsDescriptions[0].location = 0;
+			vertexInputAttributsDescriptions[0].offset = offsetof(VertexPositionColor, position);
+			vertexInputAttributsDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+			// Attribute location 1: Color 
+			vertexInputAttributsDescriptions[1].binding = 0;
+			vertexInputAttributsDescriptions[1].location = 1;
+			vertexInputAttributsDescriptions[1].offset = offsetof(VertexPositionColor, color);
+			vertexInputAttributsDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 
 			VkPipelineVertexInputStateCreateInfo vertexInputStateCreateInfo = {};
 			vertexInputStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+			vertexInputStateCreateInfo.vertexBindingDescriptionCount = 1;
+			vertexInputStateCreateInfo.pVertexBindingDescriptions = &vertexInputBindingDescription;
+			vertexInputStateCreateInfo.vertexAttributeDescriptionCount = 2;
+			vertexInputStateCreateInfo.pVertexAttributeDescriptions = vertexInputAttributsDescriptions;
 
 			VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {};
 			inputAssemblyStateCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 			inputAssemblyStateCreateInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 			inputAssemblyStateCreateInfo.primitiveRestartEnable = FALSE;
 
-			VkViewport viewport = { 0.f, 0.f,
+			VkViewport viewport = { 0.f, 0.f, 
 				static_cast<float>(currentExtent.width), static_cast<float>(currentExtent.height),
 				0.f, 1.f };
 
@@ -496,8 +521,7 @@ int main(const int argc, const char* const argv[])
 			VkGraphicsPipelineCreateInfo graphicsPipelineCreateInfo = {};
 			graphicsPipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 			graphicsPipelineCreateInfo.stageCount = 2;
-			VkPipelineShaderStageCreateInfo shaderStages[] = { vertexShaderStageInfo, fragmentShaderStageInfo };
-			graphicsPipelineCreateInfo.pStages = shaderStages;
+			graphicsPipelineCreateInfo.pStages = shaderStagesCreateInfos;
 			graphicsPipelineCreateInfo.pVertexInputState = &vertexInputStateCreateInfo;
 			graphicsPipelineCreateInfo.pInputAssemblyState = &inputAssemblyStateCreateInfo;
 			graphicsPipelineCreateInfo.pViewportState = &viewportStateCreateInfo;
@@ -541,20 +565,21 @@ int main(const int argc, const char* const argv[])
 			vkCreateCommandPool(hVkDevice, &commandPoolCreateInfo, nullptr, &hVkCommandPool);
 		}
 
-		// Vertex Position Buffer 
+		// Vertex Position Color Buffer 
 		{
-			float vVertexPositions[8][3] = {
-				{ -1.0f, -1.0f, -1.0f },
-				{ -1.0f, -1.0f,  1.0f },
-				{ -1.0f,  1.0f, -1.0f },
-				{ -1.0f,  1.0f,  1.0f },
-				{ 1.0f, -1.0f, -1.0f },
-				{ 1.0f, -1.0f,  1.0f },
-				{ 1.0f,  1.0f, -1.0f },
-				{ 1.0f,  1.0f,  1.0f },
+			VertexPositionColor vVertexPositionColor[] = {
+				// { position, color }
+				{ { -1.0f, -1.0f, -1.0f }, { 0.0f, 0.0f, 0.0f } },
+				{ { -1.0f, -1.0f,  1.0f }, { 0.0f, 0.0f, 1.0f } },
+				{ { -1.0f,  1.0f, -1.0f }, { 0.0f, 1.0f, 0.0f } },
+				{ { -1.0f,  1.0f,  1.0f }, { 0.0f, 1.0f, 1.0f } },
+				{ { 1.0f, -1.0f, -1.0f }, { 1.0f, 0.0f, 0.0f } },
+				{ { 1.0f, -1.0f,  1.0f }, { 1.0f, 0.0f, 1.0f } },
+				{ { 1.0f,  1.0f, -1.0f }, { 1.0f, 1.0f, 0.0f } },
+				{ { 1.0f,  1.0f,  1.0f }, { 1.0f, 1.0f, 1.0f } },
 			};
 
-			size_t size = sizeof vVertexPositions;
+			const size_t size = sizeof vVertexPositionColor;
 
 			VkBuffer hStagingVkBuffer = 0;
 			VkDeviceMemory hStagingVkDeviceMemory = 0;
@@ -610,16 +635,16 @@ int main(const int argc, const char* const argv[])
 
 					vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
 
-					memcpy(data, vVertexPositions, size);
+					memcpy(data, vVertexPositionColor, size);
 
 					vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
 				}
 
-				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hVertexPositionVkBuffer);
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hVertexPositionColorVkBuffer);
 
-				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hVertexPositionVkDeviceMemory);
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hVertexPositionColorVkDeviceMemory);
 
-				vkBindBufferMemory(hVkDevice, hVertexPositionVkBuffer, hVertexPositionVkDeviceMemory, 0);
+				vkBindBufferMemory(hVkDevice, hVertexPositionColorVkBuffer, hVertexPositionColorVkDeviceMemory, 0);
 			}
 
 			// Copy 
@@ -647,140 +672,7 @@ int main(const int argc, const char* const argv[])
 					{
 						VkBufferCopy copyRegion = {};
 						copyRegion.size = size;
-						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hVertexPositionVkBuffer, 1, &copyRegion);
-					}
-					vkEndCommandBuffer(commandBuffer);
-				}
-
-				// Submit 
-				{
-					VkSubmitInfo submitInfo = {};
-					submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-					submitInfo.commandBufferCount = 1;
-					submitInfo.pCommandBuffers = &commandBuffer;
-
-					vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
-					vkQueueWaitIdle(hVkQueue);
-				}
-
-				vkFreeCommandBuffers(hVkDevice, hVkCommandPool, 1, &commandBuffer);
-				commandBuffer = nullptr;
-			}
-
-			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
-			hStagingVkBuffer = 0;
-
-			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
-			hStagingVkDeviceMemory = 0;
-		}
-
-		// Vertex Color Buffer 
-		{
-			float vVertexColors[8][3] = {
-				{ 0.0f, 0.0f, 0.0f },
-				{ 0.0f, 0.0f, 1.0f },
-				{ 0.0f, 1.0f, 0.0f },
-				{ 0.0f, 1.0f, 1.0f },
-				{ 1.0f, 0.0f, 0.0f },
-				{ 1.0f, 0.0f, 1.0f },
-				{ 1.0f, 1.0f, 0.0f },
-				{ 1.0f, 1.0f, 1.0f },
-			};
-
-			size_t size = sizeof vVertexColors;
-
-			VkBuffer hStagingVkBuffer = 0;
-			VkDeviceMemory hStagingVkDeviceMemory = 0;
-
-			{
-				VkBufferCreateInfo bufferCreateInfo = {};
-				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-
-				// Create Staging Vk Buffer 
-				{
-					bufferCreateInfo.size = size;
-					bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-					bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-					vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
-				}
-
-				VkMemoryAllocateInfo memoryAllocateInfo = {};
-				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-
-				// Allocate Staging Vk Memory 
-				{
-					VkMemoryRequirements memoryRequirements;
-					vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
-
-					memoryAllocateInfo.allocationSize = memoryRequirements.size;
-
-					// Get memory Type Index 
-					{
-						VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-						VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-						vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
-
-						for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
-						{
-							if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
-								&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
-							{
-								memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-								break;
-							}
-						}
-					}
-
-					vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
-				}
-
-				vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
-
-				// Map and copy 
-				{
-					void* data;
-
-					vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
-
-					memcpy(data, vVertexColors, size);
-
-					vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
-				}
-
-				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hVertexColorVkBuffer);
-
-				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hVertexColorVkDeviceMemory);
-
-				vkBindBufferMemory(hVkDevice, hVertexColorVkBuffer, hVertexColorVkDeviceMemory, 0);
-			}
-
-			// Copy 
-			{
-				VkCommandBuffer commandBuffer = nullptr;
-
-				// Allocate Vk Command Buffer 
-				{
-					VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
-					commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-					commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-					commandBufferAllocateInfo.commandPool = hVkCommandPool;
-					commandBufferAllocateInfo.commandBufferCount = 1;
-
-					vkAllocateCommandBuffers(hVkDevice, &commandBufferAllocateInfo, &commandBuffer);
-				}
-
-				// Fill Vk Command Buffer 
-				{
-					VkCommandBufferBeginInfo commandBufferBeginInfo = {};
-					commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-					commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-					vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
-					{
-						VkBufferCopy copyRegion = {};
-						copyRegion.size = size;
-						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hVertexColorVkBuffer, 1, &copyRegion);
+						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hVertexPositionColorVkBuffer, 1, &copyRegion);
 					}
 					vkEndCommandBuffer(commandBuffer);
 				}
@@ -976,7 +868,6 @@ int main(const int argc, const char* const argv[])
 			{
 				vkBeginCommandBuffer(vectorVkCommandBuffers[i], &commandBufferBeginInfo);
 
-#if 1
 				// Vk Image Memory Barrier Present To Clear 
 				{
 					VkImageMemoryBarrier imageMemoryBarrierPresentToClear = {};
@@ -992,9 +883,6 @@ int main(const int argc, const char* const argv[])
 
 					vkCmdPipelineBarrier(vectorVkCommandBuffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrierPresentToClear);
 				}
-#endif // 1
-
-				// vkCmdClearColorImage(vectorVkCommandBuffers[i], vectorVkImages[i], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &clearColorValue, 1, &imageSubresourceRange);
 
 				// Vk Render Pass 
 				{
@@ -1016,7 +904,6 @@ int main(const int argc, const char* const argv[])
 					vkCmdEndRenderPass(vectorVkCommandBuffers[i]);
 				}
 
-#if 1
 				// Vk Image Memory Barrier Clear To Present 
 				{
 					VkImageMemoryBarrier imageMemoryBarrierClearToPresent = {};
@@ -1032,7 +919,6 @@ int main(const int argc, const char* const argv[])
 
 					vkCmdPipelineBarrier(vectorVkCommandBuffers[i], VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &imageMemoryBarrierClearToPresent);
 				}
-#endif // 1
 
 				vkEndCommandBuffer(vectorVkCommandBuffers[i]);
 			}
@@ -1113,17 +999,11 @@ int main(const int argc, const char* const argv[])
 	vkFreeMemory(hVkDevice, hIndexVkDeviceMemory, nullptr);
 	hIndexVkDeviceMemory = 0;
 
-	vkDestroyBuffer(hVkDevice, hVertexColorVkBuffer, nullptr);
-	hVertexColorVkBuffer = 0;
+	vkDestroyBuffer(hVkDevice, hVertexPositionColorVkBuffer, nullptr);
+	hVertexPositionColorVkBuffer = 0;
 
-	vkFreeMemory(hVkDevice, hVertexColorVkDeviceMemory, nullptr);
-	hVertexColorVkDeviceMemory = 0;
-
-	vkDestroyBuffer(hVkDevice, hVertexPositionVkBuffer, nullptr);
-	hVertexPositionVkBuffer = 0;
-
-	vkFreeMemory(hVkDevice, hVertexPositionVkDeviceMemory, nullptr);
-	hVertexPositionVkDeviceMemory = 0;
+	vkFreeMemory(hVkDevice, hVertexPositionColorVkDeviceMemory, nullptr);
+	hVertexPositionColorVkDeviceMemory = 0;
 
 	for (const VkFramebuffer& hVkFramebuffer : vectorVkFramebuffers)
 	{
