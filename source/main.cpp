@@ -109,12 +109,12 @@ int main(const int argc, const char* const argv[])
 				RegisterClassExA(&wcex);
 			}
 
-			DWORD windowStyle = WS_SYSMENU | WS_BORDER | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+			DWORD windowStyle = WS_SYSMENU | WS_BORDER | WS_DLGFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
 			DWORD windowExtendedStyle = WS_EX_APPWINDOW;
 
 			RECT windowRect = { 0, 0, 640, 480 };
 
-			AdjustWindowRectEx(&windowRect, windowStyle | WS_CAPTION, 0, windowExtendedStyle);
+			AdjustWindowRectEx(&windowRect, windowStyle, 0, windowExtendedStyle);
 
 			hWnd = CreateWindowExA(
 				windowExtendedStyle, // window extended style 
@@ -142,14 +142,15 @@ int main(const int argc, const char* const argv[])
 		}
 	}
 
+	// Vk 
 	{
-		std::vector<VkImage> vectorVkImages(0ULL);
+		VkPhysicalDevice hVkPhysicalDevice = nullptr;
 
 		int iQueueFamilyIndex = -1;
 
-		VkExtent2D currentExtent = {};
+		std::vector<VkImage> vectorVkImages(0ULL);
 
-		VkPhysicalDevice hVkPhysicalDevice = nullptr;
+		VkExtent2D currentExtent = {};
 
 		// Get Vk PhysicalDevice 
 		{
@@ -229,6 +230,7 @@ int main(const int argc, const char* const argv[])
 
 		{
 			VkSurfaceFormatKHR surfaceFormatKHR = {};
+
 			// Get Vk Surface Format 
 			{
 				unsigned upSurfaceFormatCount = 0;
@@ -530,7 +532,16 @@ int main(const int argc, const char* const argv[])
 			}
 		}
 
-		// Vertex Position 
+		// Create Vk Command Pool 
+		{
+			VkCommandPoolCreateInfo commandPoolCreateInfo = {};
+			commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+			commandPoolCreateInfo.queueFamilyIndex = iQueueFamilyIndex;
+
+			vkCreateCommandPool(hVkDevice, &commandPoolCreateInfo, nullptr, &hVkCommandPool);
+		}
+
+		// Vertex Position Buffer 
 		{
 			float vVertexPositions[8][3] = {
 				{ -1.0f, -1.0f, -1.0f },
@@ -548,62 +559,113 @@ int main(const int argc, const char* const argv[])
 			VkBuffer hStagingVkBuffer = 0;
 			VkDeviceMemory hStagingVkDeviceMemory = 0;
 
-			// Create Staging Vk Buffer 
 			{
 				VkBufferCreateInfo bufferCreateInfo = {};
 				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-				bufferCreateInfo.size = size;
-				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
-			}
+				// Create Staging Vk Buffer 
+				{
+					bufferCreateInfo.size = size;
+					bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+					bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-			// Allocate Staging Vk Memory 
-			{
-				VkMemoryRequirements memoryRequirements;
-				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+					vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+				}
 
 				VkMemoryAllocateInfo memoryAllocateInfo = {};
 				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-				memoryAllocateInfo.allocationSize = memoryRequirements.size;
 
-				// Get memory Type Index 
+				// Allocate Staging Vk Memory 
 				{
-					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+					VkMemoryRequirements memoryRequirements;
+					vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
 
-					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+					// Get memory Type Index 
 					{
-						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
-							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+						VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+						vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+						for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
 						{
-							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-							break;
+							if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+								&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+							{
+								memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+								break;
+							}
 						}
 					}
+
+					vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
 				}
 
-				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+				vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+				// Map and copy 
+				{
+					void* data;
+
+					vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+					memcpy(data, vVertexPositions, size);
+
+					vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				}
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hVertexPositionVkBuffer);
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hVertexPositionVkDeviceMemory);
+
+				vkBindBufferMemory(hVkDevice, hVertexPositionVkBuffer, hVertexPositionVkDeviceMemory, 0);
 			}
 
-			// Map and copy 
+			// Copy 
 			{
-				void* data;
+				VkCommandBuffer commandBuffer = nullptr;
 
-				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+				// Allocate Vk Command Buffer 
+				{
+					VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+					commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+					commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+					commandBufferAllocateInfo.commandPool = hVkCommandPool;
+					commandBufferAllocateInfo.commandBufferCount = 1;
 
-				memcpy(data, vVertexPositions, size);
+					vkAllocateCommandBuffers(hVkDevice, &commandBufferAllocateInfo, &commandBuffer);
+				}
 
-				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				// Fill Vk Command Buffer 
+				{
+					VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+					commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+					commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+					vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+					{
+						VkBufferCopy copyRegion = {};
+						copyRegion.size = size;
+						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hVertexPositionVkBuffer, 1, &copyRegion);
+					}
+					vkEndCommandBuffer(commandBuffer);
+				}
+
+				// Submit 
+				{
+					VkSubmitInfo submitInfo = {};
+					submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+					submitInfo.commandBufferCount = 1;
+					submitInfo.pCommandBuffers = &commandBuffer;
+
+					vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
+					vkQueueWaitIdle(hVkQueue);
+				}
+
+				vkFreeCommandBuffers(hVkDevice, hVkCommandPool, 1, &commandBuffer);
+				commandBuffer = nullptr;
 			}
-
-			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
-
-			// 
-			// 
-			// 
 
 			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
 			hStagingVkBuffer = 0;
@@ -612,7 +674,7 @@ int main(const int argc, const char* const argv[])
 			hStagingVkDeviceMemory = 0;
 		}
 
-		// Vertex Color 
+		// Vertex Color Buffer 
 		{
 			float vVertexColors[8][3] = {
 				{ 0.0f, 0.0f, 0.0f },
@@ -630,62 +692,113 @@ int main(const int argc, const char* const argv[])
 			VkBuffer hStagingVkBuffer = 0;
 			VkDeviceMemory hStagingVkDeviceMemory = 0;
 
-			// Create Staging Vk Buffer 
 			{
 				VkBufferCreateInfo bufferCreateInfo = {};
 				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-				bufferCreateInfo.size = size;
-				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
-			}
+				// Create Staging Vk Buffer 
+				{
+					bufferCreateInfo.size = size;
+					bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+					bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-			// Allocate Staging Vk Memory 
-			{
-				VkMemoryRequirements memoryRequirements;
-				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+					vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+				}
 
 				VkMemoryAllocateInfo memoryAllocateInfo = {};
 				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-				memoryAllocateInfo.allocationSize = memoryRequirements.size;
 
-				// Get memory Type Index 
+				// Allocate Staging Vk Memory 
 				{
-					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+					VkMemoryRequirements memoryRequirements;
+					vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
 
-					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+					// Get memory Type Index 
 					{
-						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
-							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+						VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+						vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+						for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
 						{
-							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-							break;
+							if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+								&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+							{
+								memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+								break;
+							}
 						}
 					}
+
+					vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
 				}
 
-				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+				vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+				// Map and copy 
+				{
+					void* data;
+
+					vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+					memcpy(data, vVertexColors, size);
+
+					vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				}
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hVertexColorVkBuffer);
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hVertexColorVkDeviceMemory);
+
+				vkBindBufferMemory(hVkDevice, hVertexColorVkBuffer, hVertexColorVkDeviceMemory, 0);
 			}
 
-			// Map and copy 
+			// Copy 
 			{
-				void* data;
+				VkCommandBuffer commandBuffer = nullptr;
 
-				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+				// Allocate Vk Command Buffer 
+				{
+					VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+					commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+					commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+					commandBufferAllocateInfo.commandPool = hVkCommandPool;
+					commandBufferAllocateInfo.commandBufferCount = 1;
 
-				memcpy(data, vVertexColors, size);
+					vkAllocateCommandBuffers(hVkDevice, &commandBufferAllocateInfo, &commandBuffer);
+				}
 
-				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				// Fill Vk Command Buffer 
+				{
+					VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+					commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+					commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+					vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+					{
+						VkBufferCopy copyRegion = {};
+						copyRegion.size = size;
+						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hVertexColorVkBuffer, 1, &copyRegion);
+					}
+					vkEndCommandBuffer(commandBuffer);
+				}
+
+				// Submit 
+				{
+					VkSubmitInfo submitInfo = {};
+					submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+					submitInfo.commandBufferCount = 1;
+					submitInfo.pCommandBuffers = &commandBuffer;
+
+					vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
+					vkQueueWaitIdle(hVkQueue);
+				}
+
+				vkFreeCommandBuffers(hVkDevice, hVkCommandPool, 1, &commandBuffer);
+				commandBuffer = nullptr;
 			}
-
-			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
-
-			// 
-			// 
-			// 
 
 			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
 			hStagingVkBuffer = 0;
@@ -694,7 +807,7 @@ int main(const int argc, const char* const argv[])
 			hStagingVkDeviceMemory = 0;
 		}
 
-		// Index 
+		// Index Buffer 
 		{
 			unsigned short indices[36] = {
 				0, 1, 2, // -x 
@@ -716,77 +829,119 @@ int main(const int argc, const char* const argv[])
 			VkBuffer hStagingVkBuffer = 0;
 			VkDeviceMemory hStagingVkDeviceMemory = 0;
 
-			// Create Staging Vk Buffer 
 			{
 				VkBufferCreateInfo bufferCreateInfo = {};
 				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-				bufferCreateInfo.size = size;
-				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
-			}
+				// Create Staging Vk Buffer 
+				{
+					bufferCreateInfo.size = size;
+					bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+					bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-			// Allocate Staging Vk Memory 
-			{
-				VkMemoryRequirements memoryRequirements;
-				vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
+					vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hStagingVkBuffer);
+				}
 
 				VkMemoryAllocateInfo memoryAllocateInfo = {};
 				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-				memoryAllocateInfo.allocationSize = memoryRequirements.size;
 
-				// Get memory Type Index 
+				// Allocate Staging Vk Memory 
 				{
-					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
-					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+					VkMemoryRequirements memoryRequirements;
+					vkGetBufferMemoryRequirements(hVkDevice, hStagingVkBuffer, &memoryRequirements);
 
-					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+					// Get memory Type Index 
 					{
-						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
-							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+						VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+						vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+						for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
 						{
-							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
-							break;
+							if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+								&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+							{
+								memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+								break;
+							}
 						}
 					}
+
+					vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
 				}
 
-				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hStagingVkDeviceMemory);
+				vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
+
+				// Map and copy 
+				{
+					void* data;
+
+					vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+
+					memcpy(data, indices, size);
+
+					vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				}
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hIndexVkBuffer);
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hIndexVkDeviceMemory);
+
+				vkBindBufferMemory(hVkDevice, hIndexVkBuffer, hIndexVkDeviceMemory, 0);
 			}
 
-			// Map and copy 
+			// Copy 
 			{
-				void* data;
+				VkCommandBuffer commandBuffer = nullptr;
 
-				vkMapMemory(hVkDevice, hStagingVkDeviceMemory, 0, size, 0, &data);
+				// Allocate Vk Command Buffer 
+				{
+					VkCommandBufferAllocateInfo commandBufferAllocateInfo = {};
+					commandBufferAllocateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+					commandBufferAllocateInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+					commandBufferAllocateInfo.commandPool = hVkCommandPool;
+					commandBufferAllocateInfo.commandBufferCount = 1;
 
-				memcpy(data, indices, size);
+					vkAllocateCommandBuffers(hVkDevice, &commandBufferAllocateInfo, &commandBuffer);
+				}
 
-				vkUnmapMemory(hVkDevice, hStagingVkDeviceMemory);
+				// Fill Vk Command Buffer 
+				{
+					VkCommandBufferBeginInfo commandBufferBeginInfo = {};
+					commandBufferBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+					commandBufferBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+					vkBeginCommandBuffer(commandBuffer, &commandBufferBeginInfo);
+					{
+						VkBufferCopy copyRegion = {};
+						copyRegion.size = size;
+						vkCmdCopyBuffer(commandBuffer, hStagingVkBuffer, hIndexVkBuffer, 1, &copyRegion);
+					}
+					vkEndCommandBuffer(commandBuffer);
+				}
+
+				// Submit 
+				{
+					VkSubmitInfo submitInfo = {};
+					submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+					submitInfo.commandBufferCount = 1;
+					submitInfo.pCommandBuffers = &commandBuffer;
+
+					vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
+					vkQueueWaitIdle(hVkQueue);
+				}
+
+				vkFreeCommandBuffers(hVkDevice, hVkCommandPool, 1, &commandBuffer);
+				commandBuffer = nullptr;
 			}
-
-			vkBindBufferMemory(hVkDevice, hStagingVkBuffer, hStagingVkDeviceMemory, 0);
-
-			// 
-			// 
-			// 
 
 			vkDestroyBuffer(hVkDevice, hStagingVkBuffer, nullptr);
 			hStagingVkBuffer = 0;
 
 			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
 			hStagingVkDeviceMemory = 0;
-		}
-
-		// Create Vk Command Pool 
-		{
-			VkCommandPoolCreateInfo commandPoolCreateInfo = {};
-			commandPoolCreateInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-			commandPoolCreateInfo.queueFamilyIndex = iQueueFamilyIndex;
-
-			vkCreateCommandPool(hVkDevice, &commandPoolCreateInfo, nullptr, &hVkCommandPool);
 		}
 
 		// Allocate Vk Command Buffers 
