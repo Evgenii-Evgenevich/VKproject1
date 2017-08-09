@@ -46,6 +46,8 @@ int main(const int argc, const char* const argv[])
 	std::vector<VkFramebuffer> vectorVkFramebuffers(0ULL);
 
 	VkRenderPass hVkRenderPass = 0;
+	
+	VkDescriptorSetLayout hVkDescriptorSetLayout = 0;
 
 	VkPipelineLayout hVkPipelineLayout = 0;
 
@@ -60,13 +62,16 @@ int main(const int argc, const char* const argv[])
 	VkBuffer hModelViewProjectionVkBuffer = 0;
 	VkDeviceMemory hModelViewProjectionVkDeviceMemory = 0;
 
+	VkDescriptorPool hVkDescriptorPool = 0;
+	VkDescriptorSet hVkDescriptorSet = 0;
+
 	VkCommandPool hVkCommandPool = 0;
 
 	std::vector<VkCommandBuffer> vectorVkCommandBuffers(0ULL);
 
-	VkSemaphore hVkSemaphoreImageAvalable = 0;
+	VkSemaphore hImageAvalableVkSemaphore = 0;
 
-	VkSemaphore hVkSemaphoreRenderFinished = 0;
+	VkSemaphore hRenderFinishedVkSemaphore = 0;
 
 	// Create Vk Instance 
 	{
@@ -293,8 +298,8 @@ int main(const int argc, const char* const argv[])
 				VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
 				// Get Vk Surface Capabilities 
 				{
-					vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
-					currentExtent = surfaceCapabilitiesKHR.currentExtent;
+vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+currentExtent = surfaceCapabilitiesKHR.currentExtent;
 				}
 
 				VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
@@ -317,13 +322,13 @@ int main(const int argc, const char* const argv[])
 
 			// Get Vk Swapchain Images 
 			{
-				unsigned uSwapchainImageCount = 0;
+			unsigned uSwapchainImageCount = 0;
 
-				vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
+			vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, nullptr);
 
-				vectorVkImages.resize(uSwapchainImageCount);
+			vectorVkImages.resize(uSwapchainImageCount);
 
-				vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
+			vkGetSwapchainImagesKHR(hVkDevice, hVkSwapchainKHR, &uSwapchainImageCount, vectorVkImages.data());
 			}
 
 			// Get Vk Swapchain Images Views 
@@ -393,12 +398,29 @@ int main(const int argc, const char* const argv[])
 			}
 		}
 
+		// Create Vk DescriptorSet Layout 
+		{
+			VkDescriptorSetLayoutBinding descriptorSetLayoutBinding = {};
+			descriptorSetLayoutBinding.binding = 0;
+			descriptorSetLayoutBinding.descriptorCount = 1;
+			descriptorSetLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			descriptorSetLayoutBinding.pImmutableSamplers = nullptr;
+			descriptorSetLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+			VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
+			descriptorSetLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+			descriptorSetLayoutCreateInfo.bindingCount = 1;
+			descriptorSetLayoutCreateInfo.pBindings = &descriptorSetLayoutBinding;
+
+			vkCreateDescriptorSetLayout(hVkDevice, &descriptorSetLayoutCreateInfo, nullptr, &hVkDescriptorSetLayout);
+		}
+
 		// Create Vk Pipeline Layout 
 		{
 			VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo = {};
 			pipelineLayoutCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-			pipelineLayoutCreateInfo.setLayoutCount = 0;
-			pipelineLayoutCreateInfo.pushConstantRangeCount = 0;
+			pipelineLayoutCreateInfo.setLayoutCount = 1;
+			pipelineLayoutCreateInfo.pSetLayouts = &hVkDescriptorSetLayout;
 
 			vkCreatePipelineLayout(hVkDevice, &pipelineLayoutCreateInfo, nullptr, &hVkPipelineLayout);
 		}
@@ -930,9 +952,9 @@ int main(const int argc, const char* const argv[])
 		VkSemaphoreCreateInfo semaphoreCreateInfo = {};
 		semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-		vkCreateSemaphore(hVkDevice, &semaphoreCreateInfo, nullptr, &hVkSemaphoreImageAvalable);
+		vkCreateSemaphore(hVkDevice, &semaphoreCreateInfo, nullptr, &hImageAvalableVkSemaphore);
 
-		vkCreateSemaphore(hVkDevice, &semaphoreCreateInfo, nullptr, &hVkSemaphoreRenderFinished);
+		vkCreateSemaphore(hVkDevice, &semaphoreCreateInfo, nullptr, &hRenderFinishedVkSemaphore);
 	}
 
 	ShowWindow(hWnd, SW_NORMAL);
@@ -952,25 +974,25 @@ int main(const int argc, const char* const argv[])
 		// Vk Draw 
 		{
 			unsigned uImageIndex;
-			vkAcquireNextImageKHR(hVkDevice, hVkSwapchainKHR, static_cast<uint64_t>(-1), hVkSemaphoreImageAvalable, 0, &uImageIndex);
+			vkAcquireNextImageKHR(hVkDevice, hVkSwapchainKHR, static_cast<uint64_t>(-1), hImageAvalableVkSemaphore, 0, &uImageIndex);
 
 			VkSubmitInfo submitInfo = {};
 			submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 			submitInfo.waitSemaphoreCount = 1;
-			submitInfo.pWaitSemaphores = &hVkSemaphoreImageAvalable;
+			submitInfo.pWaitSemaphores = &hImageAvalableVkSemaphore;
 			VkPipelineStageFlags pipelineStageFlags = VK_PIPELINE_STAGE_TRANSFER_BIT;
 			submitInfo.pWaitDstStageMask = &pipelineStageFlags;
 			submitInfo.commandBufferCount = 1;
 			submitInfo.pCommandBuffers = &vectorVkCommandBuffers[uImageIndex];
 			submitInfo.signalSemaphoreCount = 1;
-			submitInfo.pSignalSemaphores = &hVkSemaphoreRenderFinished;
+			submitInfo.pSignalSemaphores = &hRenderFinishedVkSemaphore;
 
 			vkQueueSubmit(hVkQueue, 1, &submitInfo, 0);
 
 			VkPresentInfoKHR presentInfoKHR = {};
 			presentInfoKHR.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 			presentInfoKHR.waitSemaphoreCount = 1;
-			presentInfoKHR.pWaitSemaphores = &hVkSemaphoreRenderFinished;
+			presentInfoKHR.pWaitSemaphores = &hRenderFinishedVkSemaphore;
 			presentInfoKHR.swapchainCount = 1;
 			presentInfoKHR.pSwapchains = &hVkSwapchainKHR;
 			presentInfoKHR.pImageIndices = &uImageIndex;
@@ -981,11 +1003,11 @@ int main(const int argc, const char* const argv[])
 		Sleep(15);
 	}
 
-	vkDestroySemaphore(hVkDevice, hVkSemaphoreRenderFinished, nullptr);
-	hVkSemaphoreRenderFinished = 0;
+	vkDestroySemaphore(hVkDevice, hRenderFinishedVkSemaphore, nullptr);
+	hRenderFinishedVkSemaphore = 0;
 
-	vkDestroySemaphore(hVkDevice, hVkSemaphoreImageAvalable, nullptr);
-	hVkSemaphoreImageAvalable = 0;
+	vkDestroySemaphore(hVkDevice, hImageAvalableVkSemaphore, nullptr);
+	hImageAvalableVkSemaphore = 0;
 
 	vkFreeCommandBuffers(hVkDevice, hVkCommandPool, static_cast<uint32_t>(vectorVkCommandBuffers.size()), vectorVkCommandBuffers.data());
 	vectorVkCommandBuffers.clear();
@@ -1010,6 +1032,15 @@ int main(const int argc, const char* const argv[])
 		vkDestroyFramebuffer(hVkDevice, hVkFramebuffer, nullptr);
 	}
 	vectorVkFramebuffers.clear();
+
+	vkDestroyDescriptorSetLayout(hVkDevice, hVkDescriptorSetLayout, nullptr);
+	hVkDescriptorSetLayout = 0;
+
+	vkDestroyBuffer(hVkDevice, hModelViewProjectionVkBuffer, nullptr);
+	hModelViewProjectionVkBuffer = 0;
+
+	vkFreeMemory(hVkDevice, hModelViewProjectionVkDeviceMemory, nullptr);
+	hModelViewProjectionVkDeviceMemory = 0;
 
 	vkDestroyPipeline(hVkDevice, hVkPipeline, nullptr);
 	hVkPipeline = 0;
