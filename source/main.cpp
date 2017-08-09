@@ -1057,6 +1057,11 @@ int main(const int argc, const char* const argv[])
 
 	MSG msg = {};
 
+	unsigned int uiUpdateCount = 0;
+
+	auto clockLastTime = std::chrono::high_resolution_clock::now();
+	long long llDeltaTime = 0;
+
 	while (msg.message != WM_QUIT)
 	{
 		// Win Peek Messages 
@@ -1064,6 +1069,22 @@ int main(const int argc, const char* const argv[])
 		{
 			TranslateMessage(&msg);
 			DispatchMessageA(&msg);
+		}
+
+		// Update 
+		{
+			uiUpdateCount++;
+			{
+				auto clockCurrentTime = std::chrono::high_resolution_clock::now();
+				llDeltaTime += std::chrono::duration_cast<std::chrono::milliseconds>(clockCurrentTime - clockLastTime).count();
+				if (llDeltaTime > 1000)
+				{
+					printf("updates\t%d\n", uiUpdateCount);
+					uiUpdateCount = 0;
+					llDeltaTime -= 1000;
+				}
+				clockLastTime = clockCurrentTime;
+			}
 		}
 
 		// Vk Draw 
@@ -1094,8 +1115,6 @@ int main(const int argc, const char* const argv[])
 
 			vkQueuePresentKHR(hVkQueue, &presentInfoKHR);
 		}
-
-		Sleep(15);
 	}
 
 	vkDestroySemaphore(hVkDevice, hRenderFinishedVkSemaphore, nullptr);
