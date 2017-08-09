@@ -298,8 +298,8 @@ int main(const int argc, const char* const argv[])
 				VkSurfaceCapabilitiesKHR surfaceCapabilitiesKHR = {};
 				// Get Vk Surface Capabilities 
 				{
-vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
-currentExtent = surfaceCapabilitiesKHR.currentExtent;
+					vkGetPhysicalDeviceSurfaceCapabilitiesKHR(hVkPhysicalDevice, hVkSurfaceKHR, &surfaceCapabilitiesKHR);
+					currentExtent = surfaceCapabilitiesKHR.currentExtent;
 				}
 
 				VkSwapchainCreateInfoKHR swapchainCreateInfoKHR = {};
@@ -857,6 +857,100 @@ currentExtent = surfaceCapabilitiesKHR.currentExtent;
 
 			vkFreeMemory(hVkDevice, hStagingVkDeviceMemory, nullptr);
 			hStagingVkDeviceMemory = 0;
+		}
+
+		// ModelViewProjectionBuffer 
+		{
+			const size_t size = sizeof ModelViewProjectionBuffer;
+
+			// Create Vk Buffer 
+			{
+				VkBufferCreateInfo bufferCreateInfo = {};
+				bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+				bufferCreateInfo.size = size;
+				bufferCreateInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+				bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+				vkCreateBuffer(hVkDevice, &bufferCreateInfo, nullptr, &hModelViewProjectionVkBuffer);
+			}
+
+			// Allocate Vk Memory 
+			{
+				VkMemoryRequirements memoryRequirements;
+				vkGetBufferMemoryRequirements(hVkDevice, hModelViewProjectionVkBuffer, &memoryRequirements);
+
+				VkMemoryAllocateInfo memoryAllocateInfo = {};
+				memoryAllocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+				memoryAllocateInfo.allocationSize = memoryRequirements.size;
+
+				// Get memory Type Index 
+				{
+					VkMemoryPropertyFlags memoryPropertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+					VkPhysicalDeviceMemoryProperties physicalDeviceMemoryProperties;
+					vkGetPhysicalDeviceMemoryProperties(hVkPhysicalDevice, &physicalDeviceMemoryProperties);
+
+					for (unsigned memoryTypeIndex = 0; memoryTypeIndex < physicalDeviceMemoryProperties.memoryTypeCount; ++memoryTypeIndex)
+					{
+						if ((memoryRequirements.memoryTypeBits & (1 << memoryTypeIndex))
+							&& (physicalDeviceMemoryProperties.memoryTypes[memoryTypeIndex].propertyFlags & memoryPropertyFlags) == memoryPropertyFlags)
+						{
+							memoryAllocateInfo.memoryTypeIndex = memoryTypeIndex;
+							break;
+						}
+					}
+				}
+
+				vkAllocateMemory(hVkDevice, &memoryAllocateInfo, nullptr, &hModelViewProjectionVkDeviceMemory);
+			}
+
+			{
+				vkBindBufferMemory(hVkDevice, hModelViewProjectionVkBuffer, hModelViewProjectionVkDeviceMemory, 0);
+			}
+
+			// Create Vk DescriptorPool 
+			{
+				VkDescriptorPoolSize descriptorPoolSize = {};
+				descriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				descriptorPoolSize.descriptorCount = 1;
+
+				VkDescriptorPoolCreateInfo descriptorPoolCreateInfo = {};
+				descriptorPoolCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+				descriptorPoolCreateInfo.poolSizeCount = 1;
+				descriptorPoolCreateInfo.pPoolSizes = &descriptorPoolSize;
+				descriptorPoolCreateInfo.maxSets = 1;
+
+				vkCreateDescriptorPool(hVkDevice, &descriptorPoolCreateInfo, nullptr, &hVkDescriptorPool);
+			}
+
+			// Allocate Vk DescriptorSet 
+			{
+				VkDescriptorSetAllocateInfo descriptorSetAllocateInfo = {};
+				descriptorSetAllocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+				descriptorSetAllocateInfo.descriptorPool = hVkDescriptorPool;
+				descriptorSetAllocateInfo.descriptorSetCount = 1;
+				descriptorSetAllocateInfo.pSetLayouts = &hVkDescriptorSetLayout;
+
+				vkAllocateDescriptorSets(hVkDevice, &descriptorSetAllocateInfo, &hVkDescriptorSet);
+			}
+
+			// Update Vk DescriptorSet 
+			{
+				VkDescriptorBufferInfo descriptorBufferInfo = {};
+				descriptorBufferInfo.buffer = hModelViewProjectionVkBuffer;
+				descriptorBufferInfo.offset = 0;
+				descriptorBufferInfo.range = size;
+
+				VkWriteDescriptorSet writeDescriptorSet = {};
+				writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				writeDescriptorSet.dstSet = hVkDescriptorSet;
+				writeDescriptorSet.dstBinding = 0;
+				writeDescriptorSet.dstArrayElement = 0;
+				writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				writeDescriptorSet.descriptorCount = 1;
+				writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+
+				vkUpdateDescriptorSets(hVkDevice, 1, &writeDescriptorSet, 0, nullptr);
+			}
 		}
 
 		// Allocate Vk Command Buffers 
